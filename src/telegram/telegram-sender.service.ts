@@ -25,7 +25,7 @@ export class TelegramSenderService {
 
       for (const part of parts) {
         try {
-          this.logger.debug(`Sending message to ${chatId}:\n${part}`);
+          this.logger.debug(`Final message text:\n${part}`);
           await this.bot.telegram.sendMessage(chatId, part, {
             parse_mode: 'MarkdownV2',
             link_preview_options: { is_disabled: true },

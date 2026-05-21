@@ -5,6 +5,7 @@
 export function escapeMarkdownV2(text: string | null | undefined): string {
   if (!text) return '';
   // Telegram requires escaping: _ * [ ] ( ) ~ > # + - = | { } . !
-  // We also escape \ itself just in case.
-  return String(text).replace(/([_*[\]()~>#+\-=|{}.!\\])/g, '\\$1');
+  // Note: the order in regex matters or we need to escape the escape char
+  const specialChars = /([_*[\]()~>#+\-=|{}.!\\])/g;
+  return String(text).replace(specialChars, '\\$1');
 }
