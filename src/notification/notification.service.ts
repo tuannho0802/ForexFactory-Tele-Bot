@@ -18,44 +18,33 @@ export class NotificationService {
   async notifyNewEvents(newEvents: DbEvent[]): Promise<void> {
     if (newEvents.length === 0) return;
     try {
-      this.logger.log(`Processing notifications for ${newEvents.length} new events`);
+      this.logger.log(`Processing new-event notifications for ${newEvents.length} events`);
       const activeUsers = await this.usersService.getActiveUsers();
+      this.logger.log(`Found ${activeUsers.length} active users`);
 
       for (const user of activeUsers) {
         const settings = await this.usersService.getUserSettings(user.id);
         if (!settings) continue;
 
         for (const event of newEvents) {
-          // Lọc theo impact
           const matchesImpact = settings.impact_filter.includes(event.impact);
-          // Lọc theo currency
           const matchesCurrency =
             !settings.currency_filter ||
             settings.currency_filter.length === 0 ||
             settings.currency_filter.includes(event.currency);
 
-          if (!matchesImpact || !matchesCurrency) {
-            continue;
-          }
+          if (!matchesImpact || !matchesCurrency) continue;
 
-          const dateStr = event.event_date;
-          const idempotencyKey = `${user.id}:${event.id}:new_event:${dateStr}`;
-
-          // Check if already notified
-          const exists = await this.eventsService.checkNotificationLogExists(idempotencyKey);
-          if (exists) {
-            continue;
-          }
+          const idempotencyKey = `${user.id}:${event.id}:new_event`;
+          const alreadySent = await this.eventsService.checkNotificationLogExists(idempotencyKey);
+          if (alreadySent) continue;
 
           try {
-            // Format message using user's timezone
             const userTimezone = user.timezone || 'Asia/Ho_Chi_Minh';
             const message = formatNewEvent(event, userTimezone);
 
-            // Enqueue message
-            this.telegramSender.enqueue(user.telegram_id, message, 'MarkdownV2');
+            await this.telegramSender.sendToMany([{ chatId: Number(user.telegram_id), message }]);
 
-            // Log notification as sent
             await this.eventsService.insertNotificationLog({
               idempotency_key: idempotencyKey,
               user_id: user.id,
@@ -64,7 +53,10 @@ export class NotificationService {
               status: 'sent',
             });
           } catch (sendError: any) {
-            this.logger.error(`Failed to dispatch notification to user ${user.id} for event ${event.id}: ${sendError.message}`, sendError.stack);
+            this.logger.error(
+              `Failed to send new_event notification to user ${user.id} for event ${event.id}`,
+              sendError.stack
+            );
             await this.eventsService.insertNotificationLog({
               idempotency_key: idempotencyKey,
               user_id: user.id,
@@ -84,7 +76,7 @@ export class NotificationService {
   async notifyActualUpdates(events: DbEvent[]): Promise<void> {
     if (events.length === 0) return;
     try {
-      this.logger.log(`Processing notifications for ${events.length} actual updates`);
+      this.logger.log(`Processing actual-update notifications for ${events.length} events`);
       const activeUsers = await this.usersService.getActiveUsers();
 
       for (const user of activeUsers) {
@@ -98,23 +90,17 @@ export class NotificationService {
             settings.currency_filter.length === 0 ||
             settings.currency_filter.includes(event.currency);
 
-          if (!matchesImpact || !matchesCurrency) {
-            continue;
-          }
+          if (!matchesImpact || !matchesCurrency) continue;
 
-          const dateStr = event.event_date;
-          const idempotencyKey = `${user.id}:${event.id}:actual_update:${dateStr}`;
-
-          const exists = await this.eventsService.checkNotificationLogExists(idempotencyKey);
-          if (exists) {
-            continue;
-          }
+          const idempotencyKey = `${user.id}:${event.id}:actual_update`;
+          const alreadySent = await this.eventsService.checkNotificationLogExists(idempotencyKey);
+          if (alreadySent) continue;
 
           try {
             const userTimezone = user.timezone || 'Asia/Ho_Chi_Minh';
             const message = formatActualUpdate(event, userTimezone);
 
-            this.telegramSender.enqueue(user.telegram_id, message, 'MarkdownV2');
+            await this.telegramSender.sendToMany([{ chatId: Number(user.telegram_id), message }]);
 
             await this.eventsService.insertNotificationLog({
               idempotency_key: idempotencyKey,
@@ -124,7 +110,10 @@ export class NotificationService {
               status: 'sent',
             });
           } catch (sendError: any) {
-            this.logger.error(`Failed to dispatch actual update to user ${user.id} for event ${event.id}: ${sendError.message}`, sendError.stack);
+            this.logger.error(
+              `Failed to send actual_update notification to user ${user.id} for event ${event.id}`,
+              sendError.stack
+            );
             await this.eventsService.insertNotificationLog({
               idempotency_key: idempotencyKey,
               user_id: user.id,

@@ -3,7 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { getConfig } from './config/configuration';
 import { SupabaseModule } from './supabase/supabase.module';
-import { RedisModule } from './redis/redis.module';
 import { UsersModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
 import { ScraperModule } from './scraper/scraper.module';
@@ -27,7 +26,6 @@ import { CronModule } from './cron/cron.module';
       },
     }),
     SupabaseModule,
-    RedisModule,
     UsersModule,
     EventsModule,
     ScraperModule,

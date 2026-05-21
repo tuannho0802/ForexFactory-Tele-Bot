@@ -107,16 +107,10 @@ export class EventsRepository {
   async getUpcomingEvents(fromUtc: Date, toUtc: Date): Promise<DbEvent[]> {
     try {
       const client = this.supabase.getClient();
-      
+
       const fromDateStr = fromUtc.toISOString().split('T')[0];
       const toDateStr = toUtc.toISOString().split('T')[0];
-      
-      const fromTimeStr = fromUtc.toISOString().split('T')[1].slice(0, 8);
-      const toTimeStr = toUtc.toISOString().split('T')[1].slice(0, 8);
 
-      // Query events in date range
-      // For precision, we retrieve events on the relevant dates and filter in memory,
-      // or formulate a raw or standard Supabase query that accounts for combinations of date + time.
       const { data, error } = await client
         .from('events')
         .select('*')
@@ -129,15 +123,44 @@ export class EventsRepository {
 
       const events = data as DbEvent[];
 
-      // Filter events by precise UTC timestamp
+      // Filter events by precise UTC timestamp in memory
       return events.filter((e) => {
-        if (!e.event_time) return false; // skip "All Day" events for upcoming precise alerts
+        if (!e.event_time) return false;
         const eventDateTime = new Date(`${e.event_date}T${e.event_time}Z`);
         return eventDateTime >= fromUtc && eventDateTime <= toUtc;
       });
     } catch (error: any) {
       this.logger.error('Error in getUpcomingEvents', error.stack);
       throw error;
+    }
+  }
+
+  /**
+   * Check if a scan is already running within the given time window.
+   * Used as a Supabase-native distributed lock replacement.
+   */
+  async getRunningScans(withinMinutes: number): Promise<ScanLog | null> {
+    try {
+      const client = this.supabase.getClient();
+      const cutoff = new Date(Date.now() - withinMinutes * 60 * 1000).toISOString();
+
+      const { data, error } = await client
+        .from('scan_log')
+        .select('*')
+        .eq('status', 'running')
+        .gte('started_at', cutoff)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      return data as ScanLog | null;
+    } catch (error: any) {
+      this.logger.error('Error in getRunningScans', error.stack);
+      // On DB error, return null to allow scan to proceed (fail-open)
+      return null;
     }
   }
 
@@ -228,7 +251,7 @@ export class EventsRepository {
       return (count ?? 0) > 0;
     } catch (error: any) {
       this.logger.error(`Error checking notification log for key: ${idempotencyKey}`, error.stack);
-      return false; // Safest is false to avoid missing notifications on db glitches
+      return false;
     }
   }
 

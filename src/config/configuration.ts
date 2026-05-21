@@ -5,8 +5,6 @@ export const configSchema = z.object({
   TELEGRAM_WEBHOOK_SECRET: z.string().min(1, 'TELEGRAM_WEBHOOK_SECRET is required'),
   SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
   SUPABASE_SERVICE_KEY: z.string().min(1, 'SUPABASE_SERVICE_KEY is required'),
-  UPSTASH_REDIS_REST_URL: z.string().url('UPSTASH_REDIS_REST_URL must be a valid URL'),
-  UPSTASH_REDIS_REST_TOKEN: z.string().min(1, 'UPSTASH_REDIS_REST_TOKEN is required'),
   CRON_SECRET: z.string().min(1, 'CRON_SECRET is required'),
   ADMIN_TELEGRAM_ID: z.string().min(1, 'ADMIN_TELEGRAM_ID is required'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

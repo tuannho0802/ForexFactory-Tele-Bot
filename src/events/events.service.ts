@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventsRepository } from './events.repository';
-import { DbEvent, ParsedEvent, ScanSummary } from './events.types';
+import { DbEvent, ParsedEvent, ScanLog, ScanSummary } from './events.types';
 import { generateEventHash } from '../common/utils/hash.util';
 
 @Injectable()
@@ -28,7 +28,7 @@ export class EventsService {
         const existing = await this.eventsRepository.getEventByHash(hash);
 
         if (!existing) {
-          // New event completely
+          // New event
           const inserted = await this.eventsRepository.insertEvent({
             event_hash: hash,
             title: event.title,
@@ -47,14 +47,12 @@ export class EventsService {
           // Check actual value updates
           const hadNoActual = !existing.actual;
           const hasActualNow = !!event.actual;
-          const actualChanged = existing.actual !== event.actual;
 
           if (hadNoActual && hasActualNow) {
-            // Updated actual value
             const updated = await this.eventsRepository.updateEventActual(existing.id, event.actual);
             updatedActuals.push(updated);
-          } else if (actualChanged || existing.forecast !== event.forecast || existing.previous !== event.previous) {
-            // Update other fields silently
+          } else if (existing.actual !== event.actual || existing.forecast !== event.forecast || existing.previous !== event.previous) {
+            // Update other fields silently (no notification)
             await this.eventsRepository.updateEventActual(existing.id, event.actual);
           }
         }
@@ -88,7 +86,15 @@ export class EventsService {
     }
   }
 
-  async createScanLog(batchId: string, source?: string) {
+  /**
+   * Check if a scan is already running within the last N minutes.
+   * Used as a Supabase-native distributed lock.
+   */
+  async getRunningScans(withinMinutes: number): Promise<ScanLog | null> {
+    return await this.eventsRepository.getRunningScans(withinMinutes);
+  }
+
+  async createScanLog(batchId: string, source?: string): Promise<ScanLog> {
     return await this.eventsRepository.createScanLog(batchId, source);
   }
 
@@ -101,7 +107,7 @@ export class EventsService {
       events_new?: number;
       error_msg?: string | null;
     }
-  ) {
+  ): Promise<void> {
     return await this.eventsRepository.updateScanLog(batchId, updates);
   }
 

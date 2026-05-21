@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import * as cheerio from 'cheerio';
-import { RedisService } from '../redis/redis.service';
 import { ParsedEvent, ImpactType } from '../events/events.types';
 import { sleep } from '../common/utils/sleep.util';
 import { toUtcTime } from '../common/utils/time.util';
@@ -19,10 +18,7 @@ export class ForexFactoryService {
   private circuitBreakerCount = 0;
   private readonly MAX_FAILURES = 3;
 
-  constructor(
-    private readonly httpService: HttpService,
-    private readonly redisService: RedisService
-  ) {}
+  constructor(private readonly httpService: HttpService) {}
 
   async fetchEvents(weekParam: 'this' | 'next' = 'this'): Promise<ParsedEvent[]> {
     // 1. Check circuit breaker
@@ -31,19 +27,7 @@ export class ForexFactoryService {
       throw new ScrapingCircuitOpenError();
     }
 
-    // 2. Check cache (expires after 55 minutes)
-    const cacheKey = `scrape:ff:${weekParam}:${new Date().toISOString().slice(0, 13)}`;
-    try {
-      const cached = await this.redisService.get(cacheKey);
-      if (cached) {
-        this.logger.log(`Returning cached scrape results for week: ${weekParam}`);
-        return typeof cached === 'string' ? JSON.parse(cached) : cached;
-      }
-    } catch (cacheError: any) {
-      this.logger.error('Failed to access Redis cache, proceeding with scrape', cacheError.stack);
-    }
-
-    // 3. Add random delay 2000-5000ms
+    // 2. Random delay 2000–5000ms to avoid bot detection
     const delay = Math.floor(Math.random() * 3000) + 2000;
     this.logger.log(`Delaying scrape request by ${delay}ms...`);
     await sleep(delay);
@@ -53,15 +37,8 @@ export class ForexFactoryService {
       const html = await this.fetchWithRetry(weekParam);
       const parsed = this.parseHTML(html);
 
-      // 4. Validate and filter results
+      // 3. Validate results
       const validated = parsed.filter((e) => this.isValidEvent(e));
-
-      // 5. Cache results for 55 minutes (3300 seconds)
-      try {
-        await this.redisService.setex(cacheKey, 3300, JSON.stringify(validated));
-      } catch (cacheSetError: any) {
-        this.logger.error('Failed to save scrape results to cache', cacheSetError.stack);
-      }
 
       // Reset circuit breaker on success
       this.circuitBreakerCount = 0;
@@ -105,13 +82,11 @@ export class ForexFactoryService {
     $('tr.calendar__row').each((_, row) => {
       const $row = $(row);
 
-      // ForexFactory only prints date once per day in the first row of that day
+      // ForexFactory prints date once per day in the first row of that day
       const dateCell = $row.find('td.calendar__date').text().trim();
       if (dateCell) {
         const parsedDate = this.parseFFDate(dateCell);
-        if (parsedDate) {
-          currentDate = parsedDate;
-        }
+        if (parsedDate) currentDate = parsedDate;
       }
 
       if (!currentDate) return;
@@ -133,15 +108,17 @@ export class ForexFactoryService {
       let eventDate = currentDate;
       let eventTime = parsedTime;
 
-      // Handle timezone conversion if time is present
+      // Convert ET → UTC if time is present
       if (parsedTime) {
         try {
-          // ForexFactory defaults to America/New_York (Eastern Time)
           const utcDate = toUtcTime(parsedTime, currentDate, 'America/New_York');
           eventDate = utcDate.toISOString().split('T')[0];
           eventTime = utcDate.toISOString().split('T')[1].slice(0, 5); // HH:MM
         } catch (tzError: any) {
-          this.logger.error(`Error converting timezone for ${currentDate} ${parsedTime}`, tzError.stack);
+          this.logger.error(
+            `Error converting timezone for ${currentDate} ${parsedTime}`,
+            tzError.stack
+          );
         }
       }
 
@@ -169,12 +146,11 @@ export class ForexFactoryService {
 
     const monthMap: Record<string, number> = {
       Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
-      Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11
+      Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
     };
 
     const monthName = parts[0];
     const dayStr = parts[1];
-
     const month = monthMap[monthName.slice(0, 3)];
     if (month === undefined) return null;
 
@@ -185,12 +161,9 @@ export class ForexFactoryService {
     let year = now.getFullYear();
     const currentMonth = now.getMonth();
 
-    // Adjust year boundary if needed
-    if (month === 0 && currentMonth === 11) {
-      year += 1;
-    } else if (month === 11 && currentMonth === 0) {
-      year -= 1;
-    }
+    // Year boundary adjustment (Dec → Jan)
+    if (month === 0 && currentMonth === 11) year += 1;
+    else if (month === 11 && currentMonth === 0) year -= 1;
 
     const monthPad = String(month + 1).padStart(2, '0');
     const dayPad = String(day).padStart(2, '0');
@@ -199,9 +172,7 @@ export class ForexFactoryService {
 
   private parseTime(timeStr: string): string | null {
     const clean = timeStr.toLowerCase().trim();
-    if (clean === 'all day' || clean === 'tentative' || !clean) {
-      return null;
-    }
+    if (clean === 'all day' || clean === 'tentative' || !clean) return null;
 
     const match = clean.match(/^(\d{1,2}):(\d{2})(am|pm)$/);
     if (!match) return null;
@@ -210,11 +181,8 @@ export class ForexFactoryService {
     const minutes = match[2];
     const ampm = match[3];
 
-    if (ampm === 'pm' && hours < 12) {
-      hours += 12;
-    } else if (ampm === 'am' && hours === 12) {
-      hours = 0;
-    }
+    if (ampm === 'pm' && hours < 12) hours += 12;
+    else if (ampm === 'am' && hours === 12) hours = 0;
 
     return `${String(hours).padStart(2, '0')}:${minutes}`;
   }
@@ -238,13 +206,13 @@ export class ForexFactoryService {
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     ];
     return {
       'User-Agent': agents[Math.floor(Math.random() * agents.length)],
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
-      'Referer': 'https://www.google.com/',
+      Referer: 'https://www.google.com/',
       'Cache-Control': 'no-cache',
     };
   }
