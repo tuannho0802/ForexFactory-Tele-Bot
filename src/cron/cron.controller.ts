@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, UnauthorizedException, Logger } from '@nestjs/common';
+import { Controller, Get, Headers, UnauthorizedException, Logger, Req } from '@nestjs/common';
 import { CronService } from './cron.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -11,33 +11,38 @@ export class CronController {
     private readonly configService: ConfigService,
   ) {}
 
-  private validateSecret(secret: string) {
+  private validateSecret(req: any) {
     const expectedSecret = this.configService.get<string>('CRON_SECRET');
-    if (!expectedSecret || secret !== expectedSecret) {
-      this.logger.warn(`Unauthorized cron attempt with secret: ${secret}`);
+    if (!expectedSecret) return; // Skip validation if not configured
+
+    const headerSecret = req.headers['x-cron-secret'];
+    const authSecret = req.headers['authorization']?.replace('Bearer ', '');
+    
+    if (headerSecret !== expectedSecret && authSecret !== expectedSecret) {
+      this.logger.warn(`Unauthorized cron attempt`);
       throw new UnauthorizedException('Invalid cron secret');
     }
   }
 
   @Get('scan')
-  async runScan(@Headers('x-cron-secret') secret: string) {
+  async runScan(@Req() req: any) {
     this.logger.log('🚀 Manual/Cron trigger: Scan');
-    this.validateSecret(secret);
+    this.validateSecret(req);
     return await this.cronService.handleScan();
   }
 
   @Get('morning')
-  async runMorning(@Headers('x-cron-secret') secret: string) {
+  async runMorning(@Req() req: any) {
     this.logger.log('🚀 Manual/Cron trigger: Morning Briefing');
-    this.validateSecret(secret);
+    this.validateSecret(req);
     await this.cronService.handleMorning();
     return { success: true, message: 'Morning briefing sent' };
   }
 
   @Get('alerts')
-  async runAlerts(@Headers('x-cron-secret') secret: string) {
+  async runAlerts(@Req() req: any) {
     this.logger.log('🚀 Manual/Cron trigger: Alerts');
-    this.validateSecret(secret);
+    this.validateSecret(req);
     await this.cronService.handleAlerts();
     return { success: true, message: 'Pre-event alerts processed' };
   }
