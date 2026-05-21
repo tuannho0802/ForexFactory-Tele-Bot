@@ -6,9 +6,19 @@
       "use": "@vercel/node"
     }
   ],
+  "functions": {
+    "dist/main.js": {
+      "memory": 256,
+      "maxDuration": 30
+    }
+  },
   "routes": [
     {
       "src": "/webhook/telegram",
+      "dest": "dist/main.js"
+    },
+    {
+      "src": "/api/health",
       "dest": "dist/main.js"
     },
     {
