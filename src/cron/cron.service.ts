@@ -91,9 +91,23 @@ export class CronService {
     }
   }
 
-  // TODO: Sprint 3 - handleMorning()
-  // async handleMorning(): Promise<void> { ... }
+  async handleMorning(): Promise<void> {
+    this.logger.log('⏰ Triggered morning briefing cron');
+    try {
+      await this.notificationService.sendMorningBriefing();
+    } catch (error: any) {
+      this.logger.error('Error running morning briefing cron', error.stack);
+      throw error;
+    }
+  }
 
-  // TODO: Sprint 3 - handleAlerts()
-  // async handleAlerts(): Promise<void> { ... }
+  async handleAlerts(): Promise<void> {
+    this.logger.log('⏰ Triggered alerts cron');
+    try {
+      await this.notificationService.sendPreEventAlerts();
+    } catch (error: any) {
+      this.logger.error('Error running alerts cron', error.stack);
+      throw error;
+    }
+  }
 }

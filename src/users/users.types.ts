@@ -20,4 +20,5 @@ export interface UserSettings {
   alert_minutes: number;
   impact_filter: string[];
   currency_filter: string[] | null;
+  timezone: string;
 }

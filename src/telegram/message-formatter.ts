@@ -151,19 +151,22 @@ export function formatSettings(settings: UserSettings, user: any): string {
     : 'Tất cả';
   
   const status = user.is_active ? '✅ Đang hoạt động' : '❌ Chưa subscribe';
+  const tz = settings.timezone || 'Asia/Ho_Chi_Minh';
 
   return (
     '⚙️ CÀI ĐẶT HIỆN TẠI\n' +
     '━━━━━━━━━━━━━━━━━━━━━━\n\n' +
     `📡 Trạng thái: ${status}\n\n` +
     `🌅 Bản tin sáng: ${settings.morning_enabled ? '✅ Bật' : '❌ Tắt'}\n` +
-    `⏰ Giờ nhận bản tin: ${settings.morning_time ?? '08:00'}\n\n` +
+    `⏰ Giờ nhận bản tin: ${settings.morning_time ?? '08:00'} (${tz})\n\n` +
     `⚠️ Cảnh báo trước: ${settings.alert_enabled ? '✅ Bật' : '❌ Tắt'}\n` +
     `🔔 Thời gian báo trước: ${settings.alert_minutes ?? 15} phút\n\n` +
+    `🕒 Múi giờ: ${tz}\n` +
+    `   (Dùng /settimezone để thay đổi)\n\n` +
     `🎯 Mức độ tác động:\n  ${settings.impact_filter?.map(i => `• ${i}`).join('\n  ') ?? '• Không có'}\n\n` +
     `💱 Đồng tiền lọc: ${currencyList}\n\n` +
     '━━━━━━━━━━━━━━━━━━━━━━\n' +
-    'Dùng /setimpact, /setcurrency, /settime, /setalert để thay đổi'
+    'Dùng /setimpact, /setcurrency, /settime, /setalert, /settimezone để thay đổi'
   );
 }
 

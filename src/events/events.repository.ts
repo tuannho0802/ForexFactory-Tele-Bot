@@ -116,6 +116,24 @@ export class EventsRepository {
     }
   }
 
+  async getEventsByDates(dates: string[]): Promise<DbEvent[]> {
+    this.logger.debug({ dates }, '🔍 Querying events by multiple dates');
+    try {
+      const client = this.supabase.getClient();
+      const { data, error } = await client
+        .from('events')
+        .select('*')
+        .in('event_date', dates)
+        .order('event_time', { ascending: true });
+
+      if (error) throw error;
+      return data as DbEvent[];
+    } catch (error: any) {
+      this.logger.error(`Error in getEventsByDates for dates: ${dates}`, error.stack);
+      throw error;
+    }
+  }
+
   async countEventsByDate(date: string): Promise<number> {
     try {
       const client = this.supabase.getClient();

@@ -101,6 +101,15 @@ export class EventsService {
     }
   }
 
+  async getEventsByDates(dates: string[]): Promise<DbEvent[]> {
+    try {
+      return await this.eventsRepository.getEventsByDates(dates);
+    } catch (error: any) {
+      this.logger.error(`Error in getEventsByDates for dates: ${dates}`, error.stack);
+      throw error;
+    }
+  }
+
   async countEventsByDate(date: string): Promise<number> {
     return await this.eventsRepository.countEventsByDate(date);
   }

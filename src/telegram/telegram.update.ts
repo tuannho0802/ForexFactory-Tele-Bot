@@ -8,7 +8,9 @@ import {
   formatSettings,
   formatEventList,
 } from './message-formatter';
-import { getTodayUTC } from '../common/utils/time.util';
+import { getTodayUTC, getTodayInTimezone, isEventOnDate } from '../common/utils/time.util';
+import { subDays, addDays } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { ForexFactoryService } from '../scraper/forex-factory.service';
 
 @Update()
@@ -225,6 +227,48 @@ export class TelegramUpdate {
     }
   }
 
+  @Command('settimezone')
+  async onSetTimezone(@Ctx() ctx: Context) {
+    try {
+      const text = (ctx.message as any)?.text ?? '';
+      const args = text.split(' ').slice(1);
+      
+      if (args.length === 0) {
+        await ctx.reply(
+          '❌ Cú pháp: /settimezone <múi giờ>\n\n' +
+          'Ví dụ:\n' +
+          '  /settimezone Asia/Ho_Chi_Minh\n' +
+          '  /settimezone America/New_York\n' +
+          '  /settimezone Europe/London\n\n' +
+          'Danh sách múi giờ hợp lệ: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones'
+        );
+        return;
+      }
+      
+      const tz = args[0].trim();
+      
+      // Validate IANA timezone
+      try {
+        Intl.DateTimeFormat(undefined, { timeZone: tz });
+      } catch {
+        await ctx.reply(`❌ Múi giờ "${tz}" không hợp lệ. Vui lòng kiểm tra lại.`);
+        return;
+      }
+      
+      const user = await this.usersService.getUser(ctx.from!.id);
+      if (!user) {
+        await ctx.reply('Vui lòng dùng /start trước.');
+        return;
+      }
+      
+      await this.usersService.updateUserSettings(user.id, { timezone: tz });
+      await ctx.reply(`✅ Đã đặt múi giờ: ${tz}`);
+    } catch (error: any) {
+      this.logger.error('Error in /settimezone handler', error.stack);
+      await ctx.reply('Đã xảy ra lỗi khi cài đặt múi giờ.');
+    }
+  }
+
   @Command('setimpact')
   async onSetImpact(@Ctx() ctx: Context) {
     try {
@@ -303,16 +347,6 @@ export class TelegramUpdate {
 
   @Command('today')
   async onToday(@Ctx() ctx: Context) {
-    const todayUtc = getTodayUTC();
-    this.logger.debug({ todayUtc }, '📅 /today command - UTC date');
-
-    const now = new Date();
-    this.logger.debug({
-      nowISO: now.toISOString(),
-      nowLocal: now.toString(),
-      todayUtc,
-    }, '🕐 Current time check');
-
     try {
       const telegramId = ctx.from?.id;
       if (!telegramId) return;
@@ -321,15 +355,29 @@ export class TelegramUpdate {
       if (!user) return ctx.reply('Vui lòng gõ lệnh /start trước để đăng ký.');
 
       const settings = await this.usersService.getUserSettings(user.id);
-      
+      const tz = settings?.timezone || user?.timezone || 'Asia/Ho_Chi_Minh';
+      const todayInUserTz = getTodayInTimezone(tz);
+
+      const todayDate = new Date();
+      const yesterdayUtc = formatInTimeZone(subDays(todayDate, 1), 'UTC', 'yyyy-MM-dd');
+      const todayUtc = formatInTimeZone(todayDate, 'UTC', 'yyyy-MM-dd');
+      const tomorrowUtc = formatInTimeZone(addDays(todayDate, 1), 'UTC', 'yyyy-MM-dd');
+
       this.logger.debug({
         userId: user?.id,
         isActive: user?.is_active,
+        tz,
+        todayInUserTz,
+        yesterdayUtc,
+        todayUtc,
+        tomorrowUtc,
         impactFilter: settings?.impact_filter,
         currencyFilter: settings?.currency_filter,
-      }, '👤 User settings for /today');
+      }, '👤 User settings and timezone calculation for /today');
 
-      const allEvents = await this.eventsService.getEventsByDate(todayUtc);
+      // Fetch events for today's UTC date, yesterday's UTC date, and tomorrow's UTC date
+      // to catch cross-midnight events in user's timezone
+      const allEvents = await this.eventsService.getEventsByDates([yesterdayUtc, todayUtc, tomorrowUtc]);
 
       this.logger.debug({
         total: allEvents.length,
@@ -338,13 +386,29 @@ export class TelegramUpdate {
           impact: e.impact,
           currency: e.currency,
           event_date: e.event_date,
+          event_time: e.event_time,
         })),
-      }, '📋 ALL EVENTS FOR TODAY (before filtering)');
+      }, '📋 ALL EVENTS FOR THREE UTC DAYS (before timezone filtering)');
 
-      let filtered = allEvents;
+      // In /today handler, before filtering
+      const eventsWithMissingData = allEvents.filter(e => !e.event_date || !e.event_time);
+      if (eventsWithMissingData.length > 0) {
+        this.logger.warn(
+          { count: eventsWithMissingData.length, sample: eventsWithMissingData.slice(0, 3) },
+          '⚠️ Events with missing event_date or event_time found in DB'
+        );
+      }
+
+      // Then filter safely
+      let filtered = allEvents.filter(e => isEventOnDate(e.event_date, e.event_time, todayInUserTz, tz));
+
+      this.logger.debug({
+        totalAfterTz: filtered.length,
+      }, '📋 Events after timezone filtering');
+
       if (settings?.impact_filter && settings.impact_filter.length > 0) {
         this.logger.debug({ filter: settings.impact_filter }, '🔍 Applying impact filter');
-        filtered = allEvents.filter(e => settings.impact_filter!.includes(e.impact));
+        filtered = filtered.filter(e => settings.impact_filter!.includes(e.impact));
         
         this.logger.debug({
           before: allEvents.length,
@@ -368,30 +432,27 @@ export class TelegramUpdate {
 
       if (filtered.length === 0) {
         this.logger.warn({
-          todayUtc,
+          todayInUserTz,
           totalEventsInDb: allEvents.length,
           impactFilter: settings?.impact_filter,
           currencyFilter: settings?.currency_filter,
-          sampleImpacts: allEvents.slice(0, 10).map(e => e.impact),
-          sampleCurrencies: allEvents.slice(0, 10).map(e => e.currency),
         }, '⚠️ No events after filtering!');
 
         await ctx.reply(
-          `📅 Lịch kinh tế ${todayUtc}\n\n` +
+          `📅 Lịch kinh tế ${todayInUserTz}\n\n` +
           `Không có sự kiện nào khớp với bộ lọc của bạn.\n` +
           `Dùng /setimpact hoặc /setcurrency để thay đổi bộ lọc.`
         );
         return;
       }
 
-      const userTimezone = user?.timezone || 'Asia/Ho_Chi_Minh';
       const chunkSize = 10;
       for (let i = 0; i < filtered.length; i += chunkSize) {
         const chunk = filtered.slice(i, i + chunkSize);
-        const formatted = formatEventList(chunk, userTimezone);
+        const formatted = formatEventList(chunk, tz);
         const pageHeader = filtered.length > chunkSize 
           ? `📅 *LỊCH KINH TẾ HÔM NAY \\(Phần ${Math.floor(i / chunkSize) + 1}\\)*\n\n`
-          : `📅 *LỊCH KINH TẾ HÔM NAY \\(${escapeMarkdownV2(todayUtc)}\\)*\n\n`;
+          : `📅 *LỊCH KINH TẾ HÔM NAY \\(${escapeMarkdownV2(todayInUserTz)}\\)*\n\n`;
         await ctx.replyWithMarkdownV2(pageHeader + formatted);
       }
     } catch (error: any) {

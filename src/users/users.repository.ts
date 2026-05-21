@@ -145,6 +145,7 @@ export class UsersRepository {
         alert_minutes: settings.alert_minutes !== undefined ? settings.alert_minutes : (existing?.alert_minutes ?? 15),
         impact_filter: settings.impact_filter || (existing?.impact_filter ?? ['High']),
         currency_filter: settings.currency_filter !== undefined ? settings.currency_filter : (existing?.currency_filter ?? null),
+        timezone: settings.timezone || (existing?.timezone ?? 'Asia/Ho_Chi_Minh'),
       };
 
       const { data, error } = await client
@@ -205,6 +206,7 @@ export class UsersRepository {
             alert_minutes: 15,
             impact_filter: ['High'],
             currency_filter: null,
+            timezone: 'Asia/Ho_Chi_Minh',
           });
 
         if (insertError) throw insertError;

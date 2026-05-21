@@ -33,20 +33,38 @@ export class CronController {
   @Post('morning')
   @UseGuards(CronAuthGuard)
   async morning(@Res() res: Response) {
-    // TODO: Sprint 3 - Morning brief sending
-    return res.status(HttpStatus.OK).json({
-      success: true,
-      message: 'TODO: Sprint 3 - Morning brief sending not implemented yet',
-    });
+    try {
+      this.logger.log('Triggered morning briefing via cron endpoint');
+      await this.cronService.handleMorning();
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: 'Morning brief sent successfully',
+      });
+    } catch (err: any) {
+      this.logger.error('Error during morning briefing in controller', err.stack);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        error: err.message,
+      });
+    }
   }
 
   @Post('alerts')
   @UseGuards(CronAuthGuard)
   async alerts(@Res() res: Response) {
-    // TODO: Sprint 3 - Pre-event alerts sending
-    return res.status(HttpStatus.OK).json({
-      success: true,
-      message: 'TODO: Sprint 3 - Pre-event alerts sending not implemented yet',
-    });
+    try {
+      this.logger.log('Triggered pre-event alerts via cron endpoint');
+      await this.cronService.handleAlerts();
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: 'Pre-event alerts sent successfully',
+      });
+    } catch (err: any) {
+      this.logger.error('Error during pre-event alerts in controller', err.stack);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        error: err.message,
+      });
+    }
   }
 }
