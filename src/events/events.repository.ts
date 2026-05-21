@@ -104,6 +104,35 @@ export class EventsRepository {
     }
   }
 
+  async countEventsByDate(date: string): Promise<number> {
+    try {
+      const client = this.supabase.getClient();
+      const { count, error } = await client
+        .from('events')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_date', date);
+      if (error) throw error;
+      return count || 0;
+    } catch (error: any) {
+      this.logger.error(`Error in countEventsByDate for date: ${date}`, error.stack);
+      return 0;
+    }
+  }
+
+  async countAll(): Promise<number> {
+    try {
+      const client = this.supabase.getClient();
+      const { count, error } = await client
+        .from('events')
+        .select('*', { count: 'exact', head: true });
+      if (error) throw error;
+      return count || 0;
+    } catch (error: any) {
+      this.logger.error(`Error in countAll`, error.stack);
+      return 0;
+    }
+  }
+
   async getUpcomingEvents(fromUtc: Date, toUtc: Date): Promise<DbEvent[]> {
     try {
       const client = this.supabase.getClient();

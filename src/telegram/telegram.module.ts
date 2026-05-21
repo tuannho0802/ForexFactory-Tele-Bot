@@ -6,6 +6,7 @@ import { TelegramSenderService } from './telegram-sender.service';
 import { TelegramWebhookController } from './telegram-webhook.controller';
 import { UsersModule } from '../users/users.module';
 import { EventsModule } from '../events/events.module';
+import { ScraperModule } from '../scraper/scraper.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { EventsModule } from '../events/events.module';
     }),
     UsersModule,
     EventsModule,
+    ScraperModule,
   ],
   controllers: [TelegramWebhookController],
   providers: [TelegramUpdate, TelegramSenderService],

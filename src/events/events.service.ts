@@ -77,6 +77,14 @@ export class EventsService {
     }
   }
 
+  async countEventsByDate(date: string): Promise<number> {
+    return await this.eventsRepository.countEventsByDate(date);
+  }
+
+  async countAll(): Promise<number> {
+    return await this.eventsRepository.countAll();
+  }
+
   async getUpcomingEvents(fromUtc: Date, toUtc: Date): Promise<DbEvent[]> {
     try {
       return await this.eventsRepository.getUpcomingEvents(fromUtc, toUtc);

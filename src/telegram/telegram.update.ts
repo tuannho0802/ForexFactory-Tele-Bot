@@ -9,6 +9,7 @@ import {
   formatEventList,
 } from './message-formatter';
 import { getTodayUTC } from '../common/utils/time.util';
+import { ForexFactoryService } from '../scraper/forex-factory.service';
 
 @Update()
 export class TelegramUpdate {
@@ -16,7 +17,8 @@ export class TelegramUpdate {
 
   constructor(
     private readonly usersService: UsersService,
-    private readonly eventsService: EventsService
+    private readonly eventsService: EventsService,
+    private readonly forexFactoryService: ForexFactoryService
   ) {}
 
   @Start()
@@ -374,6 +376,45 @@ export class TelegramUpdate {
     } catch (error: any) {
       this.logger.error('Error in /next handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi kiểm tra sự kiện tiếp theo.');
+    }
+  }
+
+  @Command('debug')
+  async onDebug(@Ctx() ctx: Context) {
+    const adminIds = (process.env.ADMIN_CHAT_IDS || '').split(',').map(Number);
+    if (!adminIds.includes(ctx.from!.id)) {
+      await ctx.reply('⛔ Bạn không có quyền sử dụng lệnh này.');
+      return;
+    }
+    
+    await ctx.reply('🔍 Đang kiểm tra dữ liệu từ ForexFactory...');
+    
+    try {
+      // Test cả 3 nguồn dữ liệu
+      const results = await this.forexFactoryService.debugFetchAllSources();
+      
+      let debugMessage = '📊 *KẾT QUẢ DEBUG*\n\n';
+      
+      for (const [source, data] of Object.entries(results)) {
+        debugMessage += `*${source.toUpperCase()}:*\n`;
+        debugMessage += `  • Số events: ${data.count ?? 'Error'}\n`;
+        debugMessage += `  • Events hôm nay: ${data.todayCount ?? 'N/A'}\n`;
+        debugMessage += `  • Sample: ${data.sample || 'N/A'}\n`;
+        if (data.error) debugMessage += `  • Error: ${data.error}\n`;
+        debugMessage += '\n';
+      }
+      
+      // Kiểm tra kết nối API
+      const today = getTodayUTC();
+      const dbCount = await this.eventsService.countEventsByDate(today);
+      debugMessage += `*DATABASE:*\n`;
+      debugMessage += `  • Events ngày ${today}: ${dbCount}\n`;
+      debugMessage += `  • Tổng events trong DB: ${await this.eventsService.countAll()}\n`;
+      
+      await ctx.reply(debugMessage, { parse_mode: 'Markdown' });
+      
+    } catch (error: any) {
+      await ctx.reply(`❌ Lỗi debug: ${error.message}`);
     }
   }
 }

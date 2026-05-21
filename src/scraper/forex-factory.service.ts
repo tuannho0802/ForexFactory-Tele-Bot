@@ -1,101 +1,325 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { parseISO } from 'date-fns';
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
+import { format } from 'date-fns';
 import { ParsedEvent, ImpactType } from '../events/events.types';
 import { sleep } from '../common/utils/sleep.util';
+import { getTodayUTC } from '../common/utils/time.util';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { firstValueFrom } from 'rxjs';
 
 interface FFJsonEvent {
   title: string;
   country: string;
-  date: string;       // ISO 8601 with offset e.g. "2026-05-21T12:30:00-04:00"
   impact: string;
-  forecast: string;
-  previous: string;
-  actual: string;
+  date: string;     // "2026-05-21T03:15:00-04:00"
+  time?: string;
+  forecast?: string;
+  previous?: string;
+  actual?: string;
+  url?: string;
+}
+
+interface CacheEntry {
+  data: ParsedEvent[];
+  timestamp: number;
+  source: 'json' | 'xml' | 'html';
 }
 
 @Injectable()
 export class ForexFactoryService {
-  private circuitBreakerCount = 0;
-  private readonly MAX_FAILURES = 3;
+  private readonly logger = new Logger(ForexFactoryService.name);
+  
+  // Cache với TTL 55 phút (an toàn dưới giới hạn rate limit)
+  private eventCache: Map<string, CacheEntry> = new Map();
+  private readonly CACHE_TTL = 55 * 60 * 1000; // 55 phút
+  private readonly RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5 phút
+  private requestTimestamps: number[] = [];
+  private readonly MAX_REQUESTS_PER_WINDOW = 2;
 
   constructor(
     private readonly httpService: HttpService,
-    @InjectPinoLogger(ForexFactoryService.name)
-    private readonly logger: PinoLogger,
   ) {}
 
+  /**
+   * Kiểm tra rate limit trước khi gọi API
+   */
+  private async checkRateLimit(): Promise<void> {
+    const now = Date.now();
+    
+    // Xóa các timestamp cũ hơn 5 phút
+    this.requestTimestamps = this.requestTimestamps.filter(
+      ts => now - ts < this.RATE_LIMIT_WINDOW
+    );
+    
+    if (this.requestTimestamps.length >= this.MAX_REQUESTS_PER_WINDOW) {
+      const oldestInWindow = this.requestTimestamps[0];
+      const waitTime = this.RATE_LIMIT_WINDOW - (now - oldestInWindow) + 1000;
+      
+      this.logger.warn(
+        { waitTime: Math.ceil(waitTime / 1000) + 's' },
+        '⏳ Rate limit approaching, waiting...'
+      );
+      
+      await sleep(waitTime);
+    }
+    
+    this.requestTimestamps.push(Date.now());
+  }
+
+  /**
+   * Lấy events từ cache hoặc fetch mới
+   */
   async fetchEvents(weekParam: 'this' | 'next' = 'this'): Promise<ParsedEvent[]> {
-    if (this.circuitBreakerCount >= this.MAX_FAILURES) {
-      this.logger.error('Circuit breaker OPEN — fetch disabled');
-      throw new Error('Circuit breaker open: too many consecutive failures');
+    const cacheKey = `week_${weekParam}`;
+    const cached = this.eventCache.get(cacheKey);
+    
+    // Trả về cache nếu còn valid
+    if (cached && (Date.now() - cached.timestamp) < this.CACHE_TTL) {
+      this.logger.debug(
+        { age: Math.round((Date.now() - cached.timestamp) / 1000) + 's', source: cached.source },
+        '📦 Serving from cache'
+      );
+      return cached.data;
     }
-
-    // Try Layer 1: JSON
+    
     try {
-      const events = await this.fetchFromJson(weekParam);
-      if (events.length > 0) {
-        this.circuitBreakerCount = 0;
-        this.logger.info({ count: events.length, source: 'json' }, 'Fetched events');
-        return events;
+      await this.checkRateLimit();
+      
+      // Layer 1: JSON API
+      let events = await this.fetchFromJson(weekParam);
+      let source = 'json';
+      
+      // Layer 2: XML fallback
+      if (!events || events.length === 0) {
+        this.logger.warn('JSON source returned empty, trying XML...');
+        await this.checkRateLimit();
+        events = await this.fetchFromXml(weekParam);
+        source = 'xml';
       }
-    } catch (err: any) {
-      this.logger.warn({ err: err.message }, 'JSON source failed, trying XML');
-    }
-
-    // Try Layer 2: XML
-    try {
-      const events = await this.fetchFromXml(weekParam);
-      if (events.length > 0) {
-        this.circuitBreakerCount = 0;
-        this.logger.info({ count: events.length, source: 'xml' }, 'Fetched events');
-        return events;
+      
+      // Layer 3: HTML scraping (last resort)
+      if (!events || events.length === 0) {
+        this.logger.warn('XML source also empty, falling back to HTML scraping...');
+        events = await this.fetchFromHtml();
+        source = 'html';
       }
-    } catch (err: any) {
-      this.logger.warn({ err: err.message }, 'XML source failed, trying HTML scrape');
-    }
-
-    // Try Layer 3: HTML scraping (reinstall cheerio if removed)
-    try {
-      const events = await this.fetchFromHtml();
-      this.circuitBreakerCount = 0;
-      this.logger.info({ count: events.length, source: 'html' }, 'Fetched events');
+      
+      if (events && events.length > 0) {
+        // Cập nhật cache
+        this.eventCache.set(cacheKey, {
+          data: events,
+          timestamp: Date.now(),
+          source: source as 'json' | 'xml' | 'html'
+        });
+        
+        this.logger.log(
+          `✅ Successfully fetched events. Count: ${events.length}, Source: ${source}`
+        );
+      }
+      
       return events;
-    } catch (err: any) {
-      this.circuitBreakerCount++;
-      this.logger.error({ err: err.message, attempt: this.circuitBreakerCount }, 'All sources failed');
-      throw err;
+      
+    } catch (error) {
+      this.logger.error('❌ All data sources failed', error);
+      
+      // Trả về cache cũ nếu có, kể cả đã hết hạn
+      if (cached) {
+        this.logger.warn('⚠️ Returning stale cache as fallback');
+        return cached.data;
+      }
+      
+      throw error;
     }
+  }
+
+  /**
+   * Reset cache định kỳ để đảm bảo dữ liệu luôn mới
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleCacheRefresh() {
+    this.logger.debug('🔄 Cache refresh triggered');
+    this.eventCache.clear();
+    try {
+      await this.fetchEvents('this');
+    } catch (e) {
+      this.logger.error('Background cache refresh failed', e);
+    }
+  }
+
+  // Hàm validate schema trước khi parse
+  private validateFFJsonSchema(events: any[]): boolean {
+    if (!Array.isArray(events) || events.length === 0) return false;
+    
+    const firstEvent = events[0];
+    const requiredFields = ['title', 'country', 'impact', 'date'];
+    const missingFields = requiredFields.filter(field => 
+      !(field in firstEvent) || firstEvent[field] === undefined
+    );
+    
+    if (missingFields.length > 0) {
+      this.logger.warn(
+        `⚠️ FF JSON schema may have changed! Missing required fields: ${missingFields.join(', ')}. Sample: ${JSON.stringify(firstEvent).slice(0, 200)}`
+      );
+      return false;
+    }
+    
+    return true;
   }
 
   private async fetchFromJson(weekParam: 'this' | 'next'): Promise<ParsedEvent[]> {
     const url = `https://nfs.faireconomy.media/ff_calendar_${weekParam}week.json`;
-    await sleep(500);
-    const { data } = await this.httpService.axiosRef.get<FFJsonEvent[]>(url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
-    });
-    if (!Array.isArray(data)) throw new Error('Not an array');
-    return data.map(item => this.mapJsonEvent(item)).filter((e): e is ParsedEvent => e !== null);
+    try {
+      const { data } = await this.httpService.axiosRef.get<any[]>(url, {
+        timeout: 10000,
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      });
+      
+      if (!this.validateFFJsonSchema(data)) {
+        this.logger.warn('JSON schema validation failed or array is empty.');
+        return [];
+      }
+      
+      return data.map(item => this.mapJsonEvent(item)).filter((e): e is ParsedEvent => e !== null);
+    } catch (err: any) {
+      this.logger.error(`fetchFromJson error: ${err.message}`);
+      return [];
+    }
   }
 
   private async fetchFromXml(weekParam: 'this' | 'next'): Promise<ParsedEvent[]> {
     const url = `https://nfs.faireconomy.media/ff_calendar_${weekParam}week.xml`;
-    await sleep(500);
-    const { data } = await this.httpService.axiosRef.get<string>(url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/xml' },
-    });
+    try {
+      const { data } = await this.httpService.axiosRef.get<string>(url, {
+        timeout: 10000,
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/xml' },
+      });
+      
+      const { XMLParser } = await import('fast-xml-parser');
+      const parser = new XMLParser({ ignoreAttributes: false });
+      const result = parser.parse(data);
+      const events = result?.weeklyevents?.event ?? [];
+      const arr = Array.isArray(events) ? events : [events];
+      
+      return arr.map((item: any) => this.mapXmlEvent(item)).filter((e): e is ParsedEvent => e !== null);
+    } catch (err: any) {
+      this.logger.error(`fetchFromXml error: ${err.message}`);
+      return [];
+    }
+  }
+
+  private parseEventDateTime(dateStr: string, timeStr: string, tz: string): Date | null {
+    // timeStr format: "8:30am", "10:45pm", "12:00am", or "All Day"
+    let hours = 0;
+    let minutes = 0;
     
-    const { XMLParser } = await import('fast-xml-parser');
-    const parser = new XMLParser({ ignoreAttributes: false });
-    const result = parser.parse(data);
-    const events = result?.weeklyevents?.event ?? [];
-    const arr = Array.isArray(events) ? events : [events];
+    if (timeStr && timeStr.toLowerCase() !== 'all day') {
+      const match = timeStr.match(/^(\d+):(\d+)(am|pm)$/i);
+      if (match) {
+        hours = parseInt(match[1], 10);
+        minutes = parseInt(match[2], 10);
+        const ampm = match[3].toLowerCase();
+        if (ampm === 'pm' && hours !== 12) hours += 12;
+        if (ampm === 'am' && hours === 12) hours = 0;
+      }
+    }
     
-    return arr.map((item: any) => this.mapXmlEvent(item)).filter((e): e is ParsedEvent => e !== null);
+    const localDateStr = `${dateStr}T${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:00`;
+    return fromZonedTime(localDateStr, tz);
+  }
+
+  private async fetchFromHtml(): Promise<ParsedEvent[]> {
+    try {
+      const url = 'https://www.forexfactory.com/calendar?week=this';
+      
+      const { data } = await firstValueFrom(
+        this.httpService.get(url, {
+          timeout: 15000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+          },
+        })
+      );
+      
+      const cheerio = await import('cheerio');
+      const $ = cheerio.load(data);
+      const events: ParsedEvent[] = [];
+      let _currentScrapeDate: string | null = null;
+      
+      // Selector MỚI cho cấu trúc HTML hiện tại
+      $('tr.calendar__row').each((_, row) => {
+        const $row = $(row);
+        
+        // Lấy ngày từ row header
+        const dateText = $row.find('td.calendar__date span.date').text().trim();
+        if (dateText) {
+          // Parse "Thu May 21" format
+          const today = new Date();
+          const parsedDate = new Date(`${dateText} ${today.getFullYear()}`);
+          if (!isNaN(parsedDate.getTime())) {
+            _currentScrapeDate = format(parsedDate, 'yyyy-MM-dd');
+          }
+        }
+        
+        const timeText = $row.find('td.calendar__time').text().trim();
+        const currency = $row.find('td.calendar__currency').text().trim().toUpperCase();
+        const title = $row.find('td.calendar__event span.calendar__event-title').text().trim();
+        
+        // Xác định impact từ class MỚI
+        const impactSpan = $row.find('td.calendar__impact span');
+        const impactClass = impactSpan.attr('class') || '';
+        let impact: string | null = null;
+        
+        if (impactClass.includes('icon--ff-impact-red') || impactClass.includes('high')) {
+          impact = 'High';
+        } else if (impactClass.includes('icon--ff-impact-orange') || impactClass.includes('medium')) {
+          impact = 'Medium';
+        } else if (impactClass.includes('icon--ff-impact-grey') || impactClass.includes('low')) {
+          impact = 'Low';
+        } else if (impactClass.includes('icon--ff-impact-none') || impactClass.includes('holiday')) {
+          impact = 'Holiday';
+        }
+        
+        if (!currency || !title || !impact) return;
+        
+        const forecast = $row.find('td.calendar__forecast').text().trim() || null;
+        const previous = $row.find('td.calendar__previous').text().trim() || null;
+        const actual = $row.find('td.calendar__actual').text().trim() || null;
+        
+        // Parse thời gian sự kiện (ET timezone)
+        const eventDateTime = this.parseEventDateTime(
+          _currentScrapeDate || format(new Date(), 'yyyy-MM-dd'),
+          timeText,
+          'America/New_York'
+        );
+        
+        if (!eventDateTime) return;
+        
+        events.push({
+          title,
+          currency,
+          impact: impact as 'High' | 'Medium' | 'Low' | 'Holiday',
+          eventDate: formatInTimeZone(eventDateTime, 'UTC', 'yyyy-MM-dd'),
+          eventTime: formatInTimeZone(eventDateTime, 'UTC', 'HH:mm'),
+          forecast,
+          previous,
+          actual,
+          detailUrl: null,
+        });
+      });
+      
+      this.logger.log(`📊 HTML scraping completed. Count: ${events.length}`);
+      return events;
+      
+    } catch (error) {
+      this.logger.error('❌ HTML scraping failed', error);
+      return [];
+    }
   }
 
   private mapJsonEvent(item: FFJsonEvent): ParsedEvent | null {
@@ -192,93 +416,59 @@ export class ForexFactoryService {
     return fromZonedTime(localDateStr, 'America/New_York');
   }
 
-  private parseHtmlDate(dateText: string): string | null {
-    // Expected format: "Wed May 21"
-    const currentYear = new Date().getFullYear();
-    const parsed = new Date(`${dateText} ${currentYear}`);
-    if (isNaN(parsed.getTime())) return null;
-    const month = String(parsed.getMonth() + 1).padStart(2, '0');
-    const day = String(parsed.getDate()).padStart(2, '0');
-    return `${currentYear}-${month}-${day}`;
-  }
-
-  private async fetchFromHtml(): Promise<ParsedEvent[]> {
-    // Reinstall cheerio if needed: npm install cheerio
-    await sleep(500);
-    const { data } = await this.httpService.axiosRef.get('https://www.forexfactory.com/calendar', {
-      timeout: 20000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.google.com/',
-      },
-    });
-    const cheerio = await import('cheerio');
-    const $ = cheerio.load(data);
-    const events: ParsedEvent[] = [];
-    let currentDate: string | null = null;
-
-    $('tr.calendar__row').each((_, row) => {
-      const $row = $(row);
-      const dateText = $row.find('td.calendar__date span.date').text().trim();
-      if (dateText) {
-        // Parse date like "Wed May 21" using current year
-        const parsed = this.parseHtmlDate(dateText);
-        if (parsed) currentDate = parsed;
-      }
-      if (!currentDate) return;
-
-      const timeText = $row.find('td.calendar__time').text().trim();
-      const currency = $row.find('td.calendar__currency').text().trim();
-      const title = $row.find('td.calendar__event span.calendar__event-title').text().trim();
-      const impactClass = $row.find('td.calendar__impact span').attr('class') ?? '';
-      const forecast = $row.find('td.calendar__forecast').text().trim();
-      const previous = $row.find('td.calendar__previous').text().trim();
-      const actual = $row.find('td.calendar__actual').text().trim();
-
-      if (!title || !currency) return;
-
-      const impact = this.normalizeImpactFromHtmlClass(impactClass);
-      if (!impact) return;
-
-      const eventUtc = this.parseXmlDateTime(
-        parseInt(currentDate.slice(0, 4)),
-        parseInt(currentDate.slice(5, 7)),
-        parseInt(currentDate.slice(8, 10)),
-        timeText || '12:00am',
-      );
-
-      events.push({
-        title,
-        currency,
-        impact,
-        eventDate: formatInTimeZone(eventUtc, 'UTC', 'yyyy-MM-dd'),
-        eventTime: formatInTimeZone(eventUtc, 'UTC', 'HH:mm'),
-        forecast: forecast || null,
-        previous: previous || null,
-        actual: actual || null,
-        detailUrl: null,
-      });
-    });
-
-    return events;
-  }
-
-  private normalizeImpactFromHtmlClass(cls: string): 'High' | 'Medium' | 'Low' | 'Holiday' | null {
-    if (cls.includes('high')) return 'High';
-    if (cls.includes('medium')) return 'Medium';
-    if (cls.includes('low')) return 'Low';
-    if (cls.includes('holiday')) return 'Holiday';
+  private normalizeImpact(impactRaw: string): ImpactType | null {
+    if (!impactRaw) return null;
+    
+    const impact = impactRaw.trim().toLowerCase();
+    
+    // Schema mới sử dụng class icon
+    if (impact.includes('red') || impact.includes('high') || impact === '3') {
+      return 'High';
+    }
+    if (impact.includes('orange') || impact.includes('medium') || impact === '2') {
+      return 'Medium';
+    }
+    if (impact.includes('grey') || impact.includes('low') || impact === '1') {
+      return 'Low';
+    }
+    if (impact.includes('non-economic') || impact.includes('holiday') || impact === '0') {
+      return 'Holiday';
+    }
+    
     return null;
   }
 
-  private normalizeImpact(raw: string): ImpactType | null {
-    const map: Record<string, ImpactType> = {
-      'high':    'High',
-      'medium':  'Medium',
-      'low':     'Low',
-      'holiday': 'Holiday',
-    };
-    return map[raw?.toLowerCase()] ?? null;
+  async debugFetchAllSources(): Promise<Record<string, any>> {
+    const today = getTodayUTC();
+    const results: Record<string, any> = {};
+    
+    try {
+      const jsonEvents = await this.fetchFromJson('this');
+      results['json'] = {
+        count: jsonEvents.length,
+        todayCount: jsonEvents.filter(e => e.eventDate === today).length,
+        sample: jsonEvents.length > 0 ? jsonEvents[0].title : null
+      };
+    } catch (e: any) { results['json'] = { error: e.message }; }
+
+    try {
+      const xmlEvents = await this.fetchFromXml('this');
+      results['xml'] = {
+        count: xmlEvents.length,
+        todayCount: xmlEvents.filter(e => e.eventDate === today).length,
+        sample: xmlEvents.length > 0 ? xmlEvents[0].title : null
+      };
+    } catch (e: any) { results['xml'] = { error: e.message }; }
+
+    try {
+      const htmlEvents = await this.fetchFromHtml();
+      results['html'] = {
+        count: htmlEvents.length,
+        todayCount: htmlEvents.filter(e => e.eventDate === today).length,
+        sample: htmlEvents.length > 0 ? htmlEvents[0].title : null
+      };
+    } catch (e: any) { results['html'] = { error: e.message }; }
+
+    return results;
   }
 }
