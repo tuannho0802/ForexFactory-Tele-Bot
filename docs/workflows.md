@@ -4,6 +4,18 @@
 
 ---
 
+## 2026-05-21 – Fix Logger Runtime Error (pino-pretty)
+
+- **Nguyên nhân:** Lỗi `unable to determine transport target for "pino-pretty"` xảy ra trên Vercel do `pino-pretty` không tương thích với môi trường serverless/production.
+- **Sửa lỗi trong `app.module.ts`:**
+  - Thay đổi logic kiểm tra `NODE_ENV`.
+  - Chỉ kích hoạt `transport: pino-pretty` khi `NODE_ENV !== 'production'`.
+  - Trong production, đặt `transport: undefined` để log ra console dạng JSON (Vercel tự thu thập).
+- **Cấu hình `pino-pretty`:** Thêm `singleLine: true` cho môi trường development để log gọn gàng hơn.
+- Build thành công: `npm run build` – 0 lỗi.
+
+---
+
 ## 2026-05-21 – Tối ưu hóa Cron Jobs
 
 - **Tách biệt Cron chung và Cron riêng:** Phân chia rõ ràng giữa việc quét dữ liệu (external API) và gửi thông báo cho user (internal DB).
