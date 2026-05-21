@@ -85,18 +85,30 @@ export class EventsRepository {
   }
 
   async getEventsByDate(date: string): Promise<DbEvent[]> {
+    this.logger.debug({ date }, '🔍 Querying events by date');
     try {
       const client = this.supabase.getClient();
       const { data, error } = await client
         .from('events')
         .select('*')
         .eq('event_date', date)
-        .order('event_time', { ascending: true, nullsFirst: false });
+        .order('event_time', { ascending: true });
 
-      if (error) {
-        throw error;
-      }
+      this.logger.debug({
+        date,
+        count: data?.length ?? 0,
+        error: error?.message,
+        sample: data?.slice(0, 3).map((e: any) => ({ 
+          id: e.id, 
+          title: e.title, 
+          event_date: e.event_date, 
+          event_time: e.event_time,
+          impact: e.impact,
+          currency: e.currency 
+        })),
+      }, '📊 DB QUERY RESULT');
 
+      if (error) throw error;
       return data as DbEvent[];
     } catch (error: any) {
       this.logger.error(`Error in getEventsByDate for date: ${date}`, error.stack);
@@ -130,6 +142,25 @@ export class EventsRepository {
     } catch (error: any) {
       this.logger.error(`Error in countAll`, error.stack);
       return 0;
+    }
+  }
+
+  async getDistinctDates(): Promise<string[]> {
+    try {
+      const client = this.supabase.getClient();
+      const { data, error } = await client
+        .from('events')
+        .select('event_date')
+        .order('event_date');
+      
+      if (error) throw error;
+      
+      const dates = [...new Set(data.map((d: any) => d.event_date))];
+      this.logger.debug({ dates, count: dates.length }, '📅 Distinct dates in DB');
+      return dates;
+    } catch (error: any) {
+      this.logger.error(`Error in getDistinctDates`, error.stack);
+      return [];
     }
   }
 

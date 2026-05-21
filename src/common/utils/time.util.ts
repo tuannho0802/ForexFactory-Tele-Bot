@@ -31,7 +31,15 @@ export function formatUtcToLocal(utcTimeStr: string, userTimezone: string): stri
 }
 
 export function getTodayUTC(): string {
-  return formatInTimeZone(new Date(), 'UTC', 'yyyy-MM-dd');
+  const now = new Date();
+  const todayUtc = formatInTimeZone(now, 'UTC', 'yyyy-MM-dd');
+  
+  console.log(`[TIME UTIL] getTodayUTC() called:
+  - now.toISOString(): ${now.toISOString()}
+  - now.toString(): ${now.toString()}
+  - todayUtc: ${todayUtc}`);
+  
+  return todayUtc;
 }
 
 export function getNowUTC(): Date {

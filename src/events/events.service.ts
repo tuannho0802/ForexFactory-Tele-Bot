@@ -14,6 +14,29 @@ export class EventsService {
     const updatedActuals: DbEvent[] = [];
 
     try {
+      this.logger.debug({ total: events.length }, '💾 Attempting to save events to DB');
+      
+      const sample = events.slice(0, 5).map(e => ({
+        title: e.title,
+        currency: e.currency,
+        impact: e.impact,
+        eventDate: e.eventDate,
+        eventTime: e.eventTime,
+      }));
+      this.logger.debug({ sample }, '📋 Sample events being saved to DB');
+      
+      const dateCounts: Record<string, number> = {};
+      for (const event of events) {
+        dateCounts[event.eventDate] = (dateCounts[event.eventDate] || 0) + 1;
+      }
+      this.logger.debug({ dateCounts }, '📅 Event date distribution');
+      
+      const impactCounts: Record<string, number> = {};
+      for (const event of events) {
+        impactCounts[event.impact] = (impactCounts[event.impact] || 0) + 1;
+      }
+      this.logger.debug({ impactCounts }, '🎯 Impact distribution');
+
       this.logger.log(`Processing ${events.length} parsed events for batch: ${batchId}`);
 
       for (const event of events) {
@@ -58,6 +81,7 @@ export class EventsService {
         }
       }
 
+      this.logger.debug({ saved: events.length }, '✅ Events saved to DB');
       this.logger.log(
         `Scan result processing complete. New: ${newEvents.length}, Updated actuals: ${updatedActuals.length}`
       );
@@ -83,6 +107,14 @@ export class EventsService {
 
   async countAll(): Promise<number> {
     return await this.eventsRepository.countAll();
+  }
+
+  async countAllEvents(): Promise<number> {
+    return this.countAll();
+  }
+
+  async getDistinctDates(): Promise<string[]> {
+    return await this.eventsRepository.getDistinctDates();
   }
 
   async getUpcomingEvents(fromUtc: Date, toUtc: Date): Promise<DbEvent[]> {

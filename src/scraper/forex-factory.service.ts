@@ -171,18 +171,44 @@ export class ForexFactoryService {
 
   private async fetchFromJson(weekParam: 'this' | 'next'): Promise<ParsedEvent[]> {
     const url = `https://nfs.faireconomy.media/ff_calendar_${weekParam}week.json`;
+    
+    this.logger.debug({ url }, '🌐 Fetching JSON from ForexFactory');
+    
     try {
       const { data } = await this.httpService.axiosRef.get<any[]>(url, {
-        timeout: 10000,
-        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
       });
+      
+      if (!Array.isArray(data)) {
+        this.logger.error({ dataType: typeof data }, '❌ JSON response is not an array!');
+        throw new Error('JSON response is not an array');
+      }
+
+      this.logger.debug({
+        length: data.length,
+        keys: data.length > 0 ? Object.keys(data[0]) : [],
+      }, '📦 JSON fetched — schema check');
       
       if (!this.validateFFJsonSchema(data)) {
         this.logger.warn('JSON schema validation failed or array is empty.');
         return [];
       }
       
-      return data.map(item => this.mapJsonEvent(item)).filter((e): e is ParsedEvent => e !== null);
+      const events = data
+        .map((item) => this.mapJsonEvent(item))
+        .filter((e): e is ParsedEvent => e !== null);
+      
+      this.logger.debug({
+        total: data.length,
+        parsed: events.length,
+        dropped: data.length - events.length,
+      }, '📊 PARSE SUMMARY');
+      
+      return events;
     } catch (err: any) {
       this.logger.error(`fetchFromJson error: ${err.message}`);
       return [];
@@ -322,40 +348,59 @@ export class ForexFactoryService {
     }
   }
 
-  private mapJsonEvent(item: FFJsonEvent): ParsedEvent | null {
+  private mapJsonEvent(item: any): ParsedEvent | null {
     try {
-      // Ensure all string fields are actually strings to avoid [object Object]
       const title = typeof item.title === 'string' ? item.title.trim() : String(item.title ?? '');
       const country = typeof item.country === 'string' ? item.country.trim() : String(item.country ?? '');
-      const forecast = typeof item.forecast === 'string' && item.forecast.trim() ? item.forecast.trim() : null;
-      const previous = typeof item.previous === 'string' && item.previous.trim() ? item.previous.trim() : null;
-      const actual = typeof item.actual === 'string' && item.actual.trim() ? item.actual.trim() : null;
+      const dateRaw = typeof item.date === 'string' ? item.date.trim() : String(item.date ?? '');
+      const impactRaw = typeof item.impact === 'string' ? item.impact.trim() : String(item.impact ?? '');
       
-      if (!title || !country) return null;
+      if (!title || !country) {
+        this.logger.warn({ title, country }, '⚠️ Skipping event: missing title or country');
+        return null;
+      }
 
-      // Parse the ISO date string — it includes timezone offset
-      const dateObj = parseISO(item.date);
+      if (!dateRaw) {
+        this.logger.warn({ title, country }, '⚠️ Skipping event: missing date');
+        return null;
+      }
 
-      // Extract date and time in UTC
-      const eventDate = formatInTimeZone(dateObj, 'UTC', 'yyyy-MM-dd');
-      const eventTime = formatInTimeZone(dateObj, 'UTC', 'HH:mm');
+      let eventDate: string;
+      let eventTime: string;
 
-      const impact = this.normalizeImpact(item.impact);
-      if (!impact) return null;
+      try {
+        const parsedDate = new Date(dateRaw);
+        if (isNaN(parsedDate.getTime())) {
+          eventDate = dateRaw.split('T')[0];
+          eventTime = '00:00';
+        } else {
+          eventDate = formatInTimeZone(parsedDate, 'UTC', 'yyyy-MM-dd');
+          eventTime = formatInTimeZone(parsedDate, 'UTC', 'HH:mm');
+        }
+      } catch (err) {
+        this.logger.error({ dateRaw }, '❌ Failed to parse date');
+        return null;
+      }
+
+      const impact = this.normalizeImpact(impactRaw);
+      if (!impact) {
+        this.logger.warn({ title, impactRaw }, '⚠️ Skipping event: unrecognized impact value');
+        return null;
+      }
 
       return {
         title,
         currency: country.toUpperCase(),
-        impact,
+        impact: impact as any,
         eventDate,
         eventTime,
-        forecast,
-        previous,
-        actual,
-        detailUrl: null,
+        forecast: typeof item.forecast === 'string' && item.forecast.trim() ? item.forecast.trim() : null,
+        previous: typeof item.previous === 'string' && item.previous.trim() ? item.previous.trim() : null,
+        actual: typeof item.actual === 'string' && item.actual.trim() ? item.actual.trim() : null,
+        detailUrl: typeof item.url === 'string' ? item.url.trim() : null,
       };
     } catch (err) {
-      this.logger.warn({ item, err }, 'Failed to map json event — skipping');
+      this.logger.error({ err, item: JSON.stringify(item).slice(0, 300) }, '❌ mapJsonEvent - Exception');
       return null;
     }
   }
@@ -417,24 +462,39 @@ export class ForexFactoryService {
   }
 
   private normalizeImpact(impactRaw: string): ImpactType | null {
-    if (!impactRaw) return null;
+    if (!impactRaw && impactRaw !== '0') return null;
     
-    const impact = impactRaw.trim().toLowerCase();
+    const impact = impactRaw.toString().trim();
     
-    // Schema mới sử dụng class icon
-    if (impact.includes('red') || impact.includes('high') || impact === '3') {
+    this.logger.debug({ impactRaw: impact }, '🎯 normalizeImpact input');
+    
+    if (/^\d+$/.test(impact)) {
+      const num = parseInt(impact, 10);
+      switch (num) {
+        case 3: return 'High';
+        case 2: return 'Medium';
+        case 1: return 'Low';
+        case 0: return 'Holiday';
+        default: return null;
+      }
+    }
+    
+    const lower = impact.toLowerCase();
+    
+    if (lower.includes('high') || lower.includes('red') || lower === '3') {
       return 'High';
     }
-    if (impact.includes('orange') || impact.includes('medium') || impact === '2') {
+    if (lower.includes('medium') || lower.includes('orange') || lower === '2') {
       return 'Medium';
     }
-    if (impact.includes('grey') || impact.includes('low') || impact === '1') {
+    if (lower.includes('low') || lower.includes('grey') || lower.includes('gray') || lower === '1') {
       return 'Low';
     }
-    if (impact.includes('non-economic') || impact.includes('holiday') || impact === '0') {
+    if (lower.includes('non') || lower.includes('none') || lower.includes('holiday') || lower === '0') {
       return 'Holiday';
     }
     
+    this.logger.warn({ impactRaw: impact }, '⚠️ Unrecognized impact value');
     return null;
   }
 

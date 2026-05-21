@@ -303,6 +303,16 @@ export class TelegramUpdate {
 
   @Command('today')
   async onToday(@Ctx() ctx: Context) {
+    const todayUtc = getTodayUTC();
+    this.logger.debug({ todayUtc }, '📅 /today command - UTC date');
+
+    const now = new Date();
+    this.logger.debug({
+      nowISO: now.toISOString(),
+      nowLocal: now.toString(),
+      todayUtc,
+    }, '🕐 Current time check');
+
     try {
       const telegramId = ctx.from?.id;
       if (!telegramId) return;
@@ -310,29 +320,78 @@ export class TelegramUpdate {
       const user = await this.usersService.getUser(telegramId);
       if (!user) return ctx.reply('Vui lòng gõ lệnh /start trước để đăng ký.');
 
-      const today = getTodayUTC();
       const settings = await this.usersService.getUserSettings(user.id);
-      const allEvents = await this.eventsService.getEventsByDate(today);
+      
+      this.logger.debug({
+        userId: user?.id,
+        isActive: user?.is_active,
+        impactFilter: settings?.impact_filter,
+        currencyFilter: settings?.currency_filter,
+      }, '👤 User settings for /today');
 
-      const filtered = allEvents.filter((e) => {
-        const matchesImpact = settings?.impact_filter?.includes(e.impact) ?? true;
-        const matchesCurrency = !settings?.currency_filter || settings.currency_filter.length === 0 || settings.currency_filter.includes(e.currency);
-        return matchesImpact && matchesCurrency;
-      });
+      const allEvents = await this.eventsService.getEventsByDate(todayUtc);
+
+      this.logger.debug({
+        total: allEvents.length,
+        events: allEvents.slice(0, 10).map(e => ({
+          title: e.title,
+          impact: e.impact,
+          currency: e.currency,
+          event_date: e.event_date,
+        })),
+      }, '📋 ALL EVENTS FOR TODAY (before filtering)');
+
+      let filtered = allEvents;
+      if (settings?.impact_filter && settings.impact_filter.length > 0) {
+        this.logger.debug({ filter: settings.impact_filter }, '🔍 Applying impact filter');
+        filtered = allEvents.filter(e => settings.impact_filter!.includes(e.impact));
+        
+        this.logger.debug({
+          before: allEvents.length,
+          after: filtered.length,
+          filter: settings.impact_filter,
+        }, '📊 After impact filter');
+      }
+
+      if (settings?.currency_filter && settings.currency_filter.length > 0) {
+        this.logger.debug({ filter: settings.currency_filter }, '🔍 Applying currency filter');
+        filtered = filtered.filter(e => settings.currency_filter!.includes(e.currency));
+        
+        this.logger.debug({
+          before: allEvents.length,
+          after: filtered.length,
+          filter: settings.currency_filter,
+        }, '📊 After currency filter');
+      }
+
+      this.logger.debug({ finalCount: filtered.length }, '🎯 Final filtered events for /today');
 
       if (filtered.length === 0) {
-        await ctx.reply(`📅 Lịch kinh tế ${today}\n\nKhông có sự kiện nào khớp với bộ lọc của bạn.\nDùng /setimpact để thay đổi bộ lọc.`);
+        this.logger.warn({
+          todayUtc,
+          totalEventsInDb: allEvents.length,
+          impactFilter: settings?.impact_filter,
+          currencyFilter: settings?.currency_filter,
+          sampleImpacts: allEvents.slice(0, 10).map(e => e.impact),
+          sampleCurrencies: allEvents.slice(0, 10).map(e => e.currency),
+        }, '⚠️ No events after filtering!');
+
+        await ctx.reply(
+          `📅 Lịch kinh tế ${todayUtc}\n\n` +
+          `Không có sự kiện nào khớp với bộ lọc của bạn.\n` +
+          `Dùng /setimpact hoặc /setcurrency để thay đổi bộ lọc.`
+        );
         return;
       }
 
-      const userTimezone = user.timezone || 'Asia/Ho_Chi_Minh';
+      const userTimezone = user?.timezone || 'Asia/Ho_Chi_Minh';
       const chunkSize = 10;
       for (let i = 0; i < filtered.length; i += chunkSize) {
         const chunk = filtered.slice(i, i + chunkSize);
         const formatted = formatEventList(chunk, userTimezone);
         const pageHeader = filtered.length > chunkSize 
           ? `📅 *LỊCH KINH TẾ HÔM NAY \\(Phần ${Math.floor(i / chunkSize) + 1}\\)*\n\n`
-          : `📅 *LỊCH KINH TẾ HÔM NAY \\(${escapeMarkdownV2(today)}\\)*\n\n`;
+          : `📅 *LỊCH KINH TẾ HÔM NAY \\(${escapeMarkdownV2(todayUtc)}\\)*\n\n`;
         await ctx.replyWithMarkdownV2(pageHeader + formatted);
       }
     } catch (error: any) {
@@ -415,6 +474,49 @@ export class TelegramUpdate {
       
     } catch (error: any) {
       await ctx.reply(`❌ Lỗi debug: ${error.message}`);
+    }
+  }
+
+  @Command('dbstatus')
+  async onDbStatus(@Ctx() ctx: Context) {
+    const adminIds = (process.env.ADMIN_CHAT_IDS || '').split(',').map(Number);
+    if (!adminIds.includes(ctx.from!.id)) {
+      await ctx.reply('⛔ Bạn không có quyền sử dụng lệnh này.');
+      return;
+    }
+    
+    await ctx.reply('🔍 Đang kiểm tra database...');
+    
+    try {
+      const totalEvents = await this.eventsService.countAllEvents();
+      const distinctDates = await this.eventsService.getDistinctDates();
+      const todayUtc = getTodayUTC();
+      const todayEvents = await this.eventsService.getEventsByDate(todayUtc);
+      
+      let message = '📊 **DATABASE STATUS**\n\n';
+      message += `📅 Hôm nay (UTC): ${todayUtc}\n`;
+      message += `📦 Tổng số events: ${totalEvents}\n`;
+      message += `📋 Số events hôm nay: ${todayEvents.length}\n\n`;
+      
+      if (todayEvents.length > 0) {
+        message += `*Sample events hôm nay:*\n`;
+        for (const e of todayEvents.slice(0, 5)) {
+          message += `  • ${e.event_time} | ${e.currency} | ${e.impact} | ${e.title}\n`;
+        }
+      }
+      
+      message += `\n*Tất cả các ngày trong DB:*\n`;
+      for (const date of distinctDates.slice(0, 30)) {
+        message += `  • ${date}\n`;
+      }
+      if (distinctDates.length > 30) {
+        message += `  ... và ${distinctDates.length - 30} ngày khác\n`;
+      }
+      
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+      
+    } catch (error: any) {
+      await ctx.reply(`❌ Lỗi: ${error.message}`);
     }
   }
 }
