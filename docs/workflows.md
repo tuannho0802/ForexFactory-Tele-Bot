@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-21 – Fix Vercel Deployment & External Cron Jobs
+
+- **Xác định nguyên nhân deploy fail:** Vercel Hobby giới hạn cron jobs 1 lần/ngày và tối đa 2 jobs.
+- **Loại bỏ toàn bộ `crons` khỏi `vercel.json`:** Chuyển sang mô hình API-driven cron.
+- **Tạo hướng dẫn thiết lập cron jobs bên ngoài:** [docs/external-cron-setup.md](file:///d:/Works/Forex-Bot-Tele/docs/external-cron-setup.md) hướng dẫn dùng `cron-job.org`.
+- **Cấu hình Vercel Route:** Cập nhật route `/api/cron/(.*)` để cho phép truy cập các endpoint cron.
+- Build thành công: `npm run build` – 0 lỗi.
+
+---
+
 ## 2026-05-21 – Tạo Tài liệu Dự án
 
 - Tạo thư mục `docs/` và file `workflows.md` ghi lại lịch sử phát triển.

@@ -18,38 +18,12 @@
       "dest": "/dist/main.js"
     },
     {
-      "src": "/api/cron/scan",
-      "dest": "/dist/main.js"
-    },
-    {
-      "src": "/api/cron/morning",
-      "dest": "/dist/main.js"
-    },
-    {
-      "src": "/api/cron/alerts",
+      "src": "/api/cron/(.*)",
       "dest": "/dist/main.js"
     },
     {
       "src": "/(.*)",
       "dest": "/dist/main.js"
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/cron/scan",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/morning",
-      "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/cron/alerts",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/health",
-      "schedule": "*/10 * * * *"
     }
   ]
 }
