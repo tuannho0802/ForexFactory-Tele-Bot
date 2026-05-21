@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-05-21 – Tối ưu hóa Cron Jobs
+
+- **Tách biệt Cron chung và Cron riêng:** Phân chia rõ ràng giữa việc quét dữ liệu (external API) và gửi thông báo cho user (internal DB).
+- **Full Daily Scan:** Chạy lúc 1:00 AM (giờ VN) để lấy dữ liệu toàn bộ ngày.
+- **Intraday Update Scan:** Chạy mỗi 2 giờ để cập nhật các sự kiện phát sinh.
+- **User Alerts (Morning/Pre-event):** Tăng tần suất lên mỗi phút (hoặc 5 phút) để đảm bảo độ chính xác của thông báo.
+- **Cập nhật tài liệu:** Đồng bộ hóa kiến trúc mới vào [docs/external-cron-setup.md](file:///d:/Works/Forex-Bot-Tele/docs/external-cron-setup.md).
+
+---
+
 ## 2026-05-21 – Fix Vercel Deployment & External Cron Jobs
 
 - **Xác định nguyên nhân deploy fail:** Vercel Hobby giới hạn cron jobs 1 lần/ngày và tối đa 2 jobs.
