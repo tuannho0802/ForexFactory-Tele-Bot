@@ -68,7 +68,7 @@ export class TelegramUpdate {
       `• \`/settime HH:MM\` \\- Đặt giờ nhận bản tin sáng \\(Ví dụ: \`/settime 08:00\`\\)`,
       `• \`/setalert N\` \\- Cảnh báo trước tin diễn ra N phút \\(Ví dụ: \`/setalert 15\`\\)`,
       `• \`/setimpact [High] [Medium] [Low] [Holiday]\` \\- Chọn mức độ tác động muốn lọc \\(Ví dụ: \`/setimpact High Medium\`\\)`,
-      `• \`/setcurrency [USD] [EUR] [GBP]...\` \\- Lọc theo cặp tiền tệ, bỏ trống để nhận tất cả \\(Ví dụ: \`/setcurrency USD EUR\`\\)`,
+      `• \`/setcurrency [USD] [EUR] [GBP]\\.\\.\\.\` \\- Lọc theo cặp tiền tệ, bỏ trống để nhận tất cả \\(Ví dụ: \`/setcurrency USD EUR\`\\)`,
       ``,
       `*3\\. Xem thông tin nhanh:*`,
       `• /today \\- Xem toàn bộ tin tức kinh tế diễn ra hôm nay`,
@@ -94,7 +94,7 @@ export class TelegramUpdate {
         alert_enabled: true,
       });
 
-      await ctx.replyWithMarkdownV2('✅ *Đã bật tất cả thông báo thành công\\!* Bạn sẽ nhận được bản tin sáng và thông báo cảnh báo trước sự kiện kinh tế\\.');
+      await ctx.reply('✅ Đã bật tất cả thông báo thành công! Bạn sẽ nhận được bản tin sáng và thông báo cảnh báo trước sự kiện kinh tế.');
     } catch (error: any) {
       this.logger.error('Error in /subscribe handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi đăng ký. Vui lòng thử lại sau.');
@@ -117,7 +117,7 @@ export class TelegramUpdate {
         alert_enabled: false,
       });
 
-      await ctx.replyWithMarkdownV2('❌ *Đã tắt nhận tất cả thông báo thành công\\!* Bạn có thể gõ lệnh /subscribe bất kỳ lúc nào để bật lại\\.');
+      await ctx.reply('❌ Đã tắt nhận tất cả thông báo thành công! Bạn có thể gõ lệnh /subscribe bất kỳ lúc nào để bật lại.');
     } catch (error: any) {
       this.logger.error('Error in /unsubscribe handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi hủy đăng ký. Vui lòng thử lại sau.');
@@ -169,7 +169,7 @@ export class TelegramUpdate {
         morning_time: `${timeStr}:00`,
       });
 
-      await ctx.replyWithMarkdownV2(`✅ *Đã đặt giờ nhận bản tin sáng thành công\\!* Giờ nhận mới: \`${escapeMarkdownV2(timeStr)}\``);
+      await ctx.reply(`✅ Đã đặt giờ nhận bản tin sáng thành công! Giờ nhận mới: ${timeStr}`);
     } catch (error: any) {
       this.logger.error('Error in /settime handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi đổi cấu hình thời gian.');
@@ -198,7 +198,7 @@ export class TelegramUpdate {
         alert_minutes: minutes,
       });
 
-      await ctx.replyWithMarkdownV2(`✅ *Đã cập nhật cấu hình thời gian báo trước thành công\\!* Nhận cảnh báo trước \`${minutes} phút\``);
+      await ctx.reply(`✅ Đã cập nhật cấu hình thời gian báo trước thành công! Nhận cảnh báo trước ${minutes} phút.`);
     } catch (error: any) {
       this.logger.error('Error in /setalert handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi cấu hình thời gian báo trước.');
@@ -234,7 +234,7 @@ export class TelegramUpdate {
         impact_filter: normalized,
       });
 
-      await ctx.replyWithMarkdownV2(`✅ *Đã cập nhật lọc tác động thành công\\!* Danh sách lọc: \`${escapeMarkdownV2(normalized.join(', '))}\``);
+      await ctx.reply(`✅ Đã cập nhật lọc tác động thành công! Danh sách lọc: ${normalized.join(', ')}`);
     } catch (error: any) {
       this.logger.error('Error in /setimpact handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi cấu hình mức độ tác động.');
@@ -263,7 +263,7 @@ export class TelegramUpdate {
       });
 
       const filterText = currencyFilter ? currencyFilter.join(', ') : 'Tất cả';
-      await ctx.replyWithMarkdownV2(`✅ *Đã cập nhật bộ lọc tiền tệ thành công\\!* Các đồng tiền nhận: \`${escapeMarkdownV2(filterText)}\``);
+      await ctx.reply(`✅ Đã cập nhật bộ lọc tiền tệ thành công! Các đồng tiền nhận: ${filterText}`);
     } catch (error: any) {
       this.logger.error('Error in /setcurrency handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi thiết lập lọc tiền tệ.');
@@ -286,7 +286,7 @@ export class TelegramUpdate {
       const events = await this.eventsService.getEventsByDate(userDateStr);
 
       if (events.length === 0) {
-        return ctx.replyWithMarkdownV2(`📅 *Lịch kinh tế hôm nay (${escapeMarkdownV2(userDateStr)}):*\n\n_Không có tin tức kinh tế quan trọng nào diễn ra hôm nay\\._`);
+        return ctx.replyWithMarkdownV2(`📅 *Lịch kinh tế hôm nay \\(${escapeMarkdownV2(userDateStr)}\\):*\n\n_Không có tin tức kinh tế quan trọng nào diễn ra hôm nay\\._`);
       }
 
       // Apply settings filter if available
@@ -301,7 +301,7 @@ export class TelegramUpdate {
       }
 
       if (filteredEvents.length === 0) {
-        return ctx.replyWithMarkdownV2(`📅 *Lịch kinh tế hôm nay (${escapeMarkdownV2(userDateStr)}):*\n\n_Không có tin tức nào phù hợp với bộ lọc cài đặt của bạn\\._`);
+        return ctx.replyWithMarkdownV2(`📅 *Lịch kinh tế hôm nay \\(${escapeMarkdownV2(userDateStr)}\\):*\n\n_Không có tin tức nào phù hợp với bộ lọc cài đặt của bạn\\._`);
       }
 
       // Paginate if events count is greater than 10
@@ -310,8 +310,8 @@ export class TelegramUpdate {
         const chunk = filteredEvents.slice(i, i + chunkSize);
         const formatted = formatEventList(chunk, userTimezone);
         const pageHeader = filteredEvents.length > chunkSize 
-          ? `📅 *LỊCH KINH TẾ HÔM NAY (Phần ${Math.floor(i / chunkSize) + 1})*\n\n`
-          : `📅 *LỊCH KINH TẾ HÔM NAY (${escapeMarkdownV2(userDateStr)})*\n\n`;
+          ? `📅 *LỊCH KINH TẾ HÔM NAY \\(Phần ${Math.floor(i / chunkSize) + 1}\\)*\n\n`
+          : `📅 *LỊCH KINH TẾ HÔM NAY \\(${escapeMarkdownV2(userDateStr)}\\)*\n\n`;
         await ctx.replyWithMarkdownV2(pageHeader + formatted);
       }
     } catch (error: any) {

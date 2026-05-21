@@ -4,7 +4,7 @@ import { formatForUser, formatUtcToLocal } from '../common/utils/time.util';
 
 export function escapeMarkdownV2(text: string | null | undefined): string {
   if (!text) return '';
-  return text.replace(/[_*\[\]()~`>#+\-=|{}.!]/g, '\\$&');
+  return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
 const IMPACT_EMOJIS: Record<string, string> = {
@@ -20,7 +20,7 @@ export function formatNewEvent(event: DbEvent, userTimezone: string): string {
   if (event.event_time) {
     try {
       const utcDate = new Date(`${event.event_date}T${event.event_time}Z`);
-      timeStr = `⏰ ${formatForUser(utcDate, userTimezone)}`;
+      timeStr = `⏰ ${escapeMarkdownV2(formatForUser(utcDate, userTimezone))}`;
     } catch (e) {
       timeStr = `⏰ ${escapeMarkdownV2(event.event_time)}`;
     }
@@ -30,7 +30,7 @@ export function formatNewEvent(event: DbEvent, userTimezone: string): string {
     `📌 *TIN MỚI XUẤT HIỆN*`,
     ``,
     `${emoji} *${escapeMarkdownV2(event.title)}*`,
-    `💱 *${escapeMarkdownV2(event.currency)}* | ${timeStr}`,
+    `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
     `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(event.forecast) : 'N/A'}`,
     `📈 Trước: ${event.previous ? escapeMarkdownV2(event.previous) : 'N/A'}`,
   ];
@@ -48,7 +48,7 @@ export function formatActualUpdate(event: DbEvent, userTimezone: string): string
   if (event.event_time) {
     try {
       const utcDate = new Date(`${event.event_date}T${event.event_time}Z`);
-      timeStr = `⏰ ${formatForUser(utcDate, userTimezone)}`;
+      timeStr = `⏰ ${escapeMarkdownV2(formatForUser(utcDate, userTimezone))}`;
     } catch (e) {
       timeStr = `⏰ ${escapeMarkdownV2(event.event_time)}`;
     }
@@ -58,7 +58,7 @@ export function formatActualUpdate(event: DbEvent, userTimezone: string): string
     `📢 *CẬP NHẬT KẾT QUẢ THỰC TẾ*`,
     ``,
     `${emoji} *${escapeMarkdownV2(event.title)}*`,
-    `💱 *${escapeMarkdownV2(event.currency)}* | ${timeStr}`,
+    `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
     `🎯 *Thực tế: ${escapeMarkdownV2(event.actual)}*`,
     `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(event.forecast) : 'N/A'}`,
     `📈 Trước: ${event.previous ? escapeMarkdownV2(event.previous) : 'N/A'}`,
@@ -66,7 +66,6 @@ export function formatActualUpdate(event: DbEvent, userTimezone: string): string
 }
 
 export function formatMorningBriefing(events: DbEvent[], date: Date, userTimezone: string): string {
-  // Format Date for header
   const dateStr = date.toLocaleDateString('vi-VN', { timeZone: userTimezone });
   
   let msg = `📅 *LỊCH KINH TẾ HÔM NAY — ${escapeMarkdownV2(dateStr)}*\n\n`;
@@ -76,7 +75,6 @@ export function formatMorningBriefing(events: DbEvent[], date: Date, userTimezon
     return msg;
   }
 
-  // Group events by impact
   const grouped: Record<string, DbEvent[]> = {
     High: [],
     Medium: [],
@@ -109,7 +107,7 @@ export function formatMorningBriefing(events: DbEvent[], date: Date, userTimezon
       }
       msg += `  • *${escapeMarkdownV2(time)}* — ${escapeMarkdownV2(e.currency)} ${escapeMarkdownV2(e.title)}`;
       if (e.forecast) {
-        msg += ` _(Dự báo: ${escapeMarkdownV2(e.forecast)})_`;
+        msg += ` _\\(Dự báo: ${escapeMarkdownV2(e.forecast)}\\)_`;
       }
       msg += '\n';
     });
@@ -125,7 +123,7 @@ export function formatPreAlert(event: DbEvent, minutesBefore: number, userTimezo
   if (event.event_time) {
     try {
       const utcDate = new Date(`${event.event_date}T${event.event_time}Z`);
-      timeStr = `⏰ ${formatForUser(utcDate, userTimezone)}`;
+      timeStr = `⏰ ${escapeMarkdownV2(formatForUser(utcDate, userTimezone))}`;
     } catch (e) {
       timeStr = `⏰ ${escapeMarkdownV2(event.event_time)}`;
     }
@@ -135,7 +133,7 @@ export function formatPreAlert(event: DbEvent, minutesBefore: number, userTimezo
     `⚠️ *SẮP DIỄN RA TRONG ${minutesBefore} PHÚT*`,
     ``,
     `${emoji} *${escapeMarkdownV2(event.title)}*`,
-    `💱 *${escapeMarkdownV2(event.currency)}* | ${timeStr}`,
+    `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
     `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(event.forecast) : 'N/A'}`,
     `📈 Trước: ${event.previous ? escapeMarkdownV2(event.previous) : 'N/A'}`,
     ``,
