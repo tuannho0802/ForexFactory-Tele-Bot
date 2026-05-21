@@ -2,12 +2,12 @@
   "version": 2,
   "builds": [
     {
-      "src": "dist/main.js",
+      "src": "src/main.ts",
       "use": "@vercel/node"
     }
   ],
   "functions": {
-    "dist/main.js": {
+    "src/main.ts": {
       "memory": 256,
       "maxDuration": 30
     }
@@ -15,27 +15,27 @@
   "routes": [
     {
       "src": "/webhook/telegram",
-      "dest": "dist/main.js"
+      "dest": "src/main.ts"
     },
     {
       "src": "/api/health",
-      "dest": "dist/main.js"
+      "dest": "src/main.ts"
     },
     {
       "src": "/api/cron/scan",
-      "dest": "dist/main.js"
+      "dest": "src/main.ts"
     },
     {
       "src": "/api/cron/morning",
-      "dest": "dist/main.js"
+      "dest": "src/main.ts"
     },
     {
       "src": "/api/cron/alerts",
-      "dest": "dist/main.js"
+      "dest": "src/main.ts"
     },
     {
       "src": "/(.*)",
-      "dest": "dist/main.js"
+      "dest": "src/main.ts"
     }
   ]
 }
