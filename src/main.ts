@@ -3,8 +3,8 @@ import { AppModule } from './app.module';
 import { Logger } from 'nestjs-pino';
 import { ValidationPipe } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
-import * as express from 'express';
-import * as serverless from 'serverless-http';
+import express from 'express';
+import serverless from 'serverless-http';
 
 let cachedServer: any;
 
