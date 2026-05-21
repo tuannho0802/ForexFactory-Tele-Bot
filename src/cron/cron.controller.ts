@@ -1,70 +1,44 @@
-import { Controller, Post, UseGuards, Res, HttpStatus } from '@nestjs/common';
-import { Response } from 'express';
+import { Controller, Get, Headers, UnauthorizedException, Logger } from '@nestjs/common';
 import { CronService } from './cron.service';
-import { CronAuthGuard } from '../common/guards/cron-auth.guard';
-import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('api/cron')
 export class CronController {
   private readonly logger = new Logger(CronController.name);
 
-  constructor(private readonly cronService: CronService) {}
+  constructor(
+    private readonly cronService: CronService,
+    private readonly configService: ConfigService,
+  ) {}
 
-  @Post('scan')
-  @UseGuards(CronAuthGuard)
-  async scan(@Res() res: Response) {
-    try {
-      this.logger.log('Triggered economic calendar scan via cron endpoint');
-      const result = await this.cronService.handleScan();
-      if (result.success) {
-        return res.status(HttpStatus.OK).json(result);
-      } else {
-        return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json(result);
-      }
-    } catch (err: any) {
-      this.logger.error('Error during calendar scan in controller', err.stack);
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        error: err.message,
-      });
+  private validateSecret(secret: string) {
+    const expectedSecret = this.configService.get<string>('CRON_SECRET');
+    if (!expectedSecret || secret !== expectedSecret) {
+      this.logger.warn(`Unauthorized cron attempt with secret: ${secret}`);
+      throw new UnauthorizedException('Invalid cron secret');
     }
   }
 
-  @Post('morning')
-  @UseGuards(CronAuthGuard)
-  async morning(@Res() res: Response) {
-    try {
-      this.logger.log('Triggered morning briefing via cron endpoint');
-      await this.cronService.handleMorning();
-      return res.status(HttpStatus.OK).json({
-        success: true,
-        message: 'Morning brief sent successfully',
-      });
-    } catch (err: any) {
-      this.logger.error('Error during morning briefing in controller', err.stack);
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        error: err.message,
-      });
-    }
+  @Get('scan')
+  async runScan(@Headers('x-cron-secret') secret: string) {
+    this.logger.log('🚀 Manual/Cron trigger: Scan');
+    this.validateSecret(secret);
+    return await this.cronService.handleScan();
   }
 
-  @Post('alerts')
-  @UseGuards(CronAuthGuard)
-  async alerts(@Res() res: Response) {
-    try {
-      this.logger.log('Triggered pre-event alerts via cron endpoint');
-      await this.cronService.handleAlerts();
-      return res.status(HttpStatus.OK).json({
-        success: true,
-        message: 'Pre-event alerts sent successfully',
-      });
-    } catch (err: any) {
-      this.logger.error('Error during pre-event alerts in controller', err.stack);
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        success: false,
-        error: err.message,
-      });
-    }
+  @Get('morning')
+  async runMorning(@Headers('x-cron-secret') secret: string) {
+    this.logger.log('🚀 Manual/Cron trigger: Morning Briefing');
+    this.validateSecret(secret);
+    await this.cronService.handleMorning();
+    return { success: true, message: 'Morning briefing sent' };
+  }
+
+  @Get('alerts')
+  async runAlerts(@Headers('x-cron-secret') secret: string) {
+    this.logger.log('🚀 Manual/Cron trigger: Alerts');
+    this.validateSecret(secret);
+    await this.cronService.handleAlerts();
+    return { success: true, message: 'Pre-event alerts processed' };
   }
 }

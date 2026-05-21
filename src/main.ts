@@ -35,8 +35,8 @@ async function bootstrap() {
   return serverlessExpress(expressApp);
 }
 
-// In serverless environments, we export the handler
-export const handler = async (req: any, res: any) => {
+// In serverless environments, we export the handler as default for Vercel
+export default async (req: any, res: any) => {
   if (!serverlessHandler) {
     serverlessHandler = await bootstrap();
   }

@@ -15,17 +15,26 @@ export class TelegramWebhookController {
   @UseGuards(TelegramWebhookGuard)
   async handleWebhook(@Req() req: Request, @Res() res: Response) {
     try {
-      this.logger.log('Webhook received from Telegram');
-      this.logger.debug(`Webhook payload: ${JSON.stringify(req.body).slice(0, 500)}`);
+      this.logger.log(`--- WEBHOOK RECEIVED ---`);
+      this.logger.log(`Method: ${req.method}`);
+      this.logger.log(`Headers: ${JSON.stringify(req.headers)}`);
+      this.logger.log(`Body: ${JSON.stringify(req.body).slice(0, 1000)}`);
       
+      if (!req.body || Object.keys(req.body).length === 0) {
+        this.logger.warn('Received empty body from Telegram');
+        return res.status(HttpStatus.OK).end();
+      }
+
       // Process the Telegram update
       await this.bot.handleUpdate(req.body, res);
+      
+      this.logger.log(`--- WEBHOOK PROCESSED SUCCESS ---`);
       
       if (!res.headersSent) {
         res.status(HttpStatus.OK).end();
       }
     } catch (err: any) {
-      this.logger.error(`Error handling Telegram webhook update: ${err.message}`, err.stack);
+      this.logger.error(`❌ Webhook Error: ${err.message}`, err.stack);
       if (!res.headersSent) {
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).send(err.message);
       }
