@@ -31,12 +31,12 @@ export function formatNewEvent(event: DbEvent, userTimezone: string): string {
     ``,
     `${emoji} *${escapeMarkdownV2(event.title)}*`,
     `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
-    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(event.forecast) : 'N/A'}`,
-    `📈 Trước: ${event.previous ? escapeMarkdownV2(event.previous) : 'N/A'}`,
+    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(String(event.forecast)) : 'N/A'}`,
+    `📈 Trước: ${event.previous ? escapeMarkdownV2(String(event.previous)) : 'N/A'}`,
   ];
 
   if (event.detail_url) {
-    lines.push(`🔗 [Xem chi tiết](${event.detail_url})`);
+    lines.push(`🔗 [Xem chi tiết](${escapeMarkdownV2(String(event.detail_url))})`);
   }
 
   return lines.join('\n');
@@ -59,9 +59,9 @@ export function formatActualUpdate(event: DbEvent, userTimezone: string): string
     ``,
     `${emoji} *${escapeMarkdownV2(event.title)}*`,
     `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
-    `🎯 *Thực tế: ${escapeMarkdownV2(event.actual)}*`,
-    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(event.forecast) : 'N/A'}`,
-    `📈 Trước: ${event.previous ? escapeMarkdownV2(event.previous) : 'N/A'}`,
+    `🎯 *Thực tế: ${escapeMarkdownV2(String(event.actual))}*`,
+    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(String(event.forecast)) : 'N/A'}`,
+    `📈 Trước: ${event.previous ? escapeMarkdownV2(String(event.previous)) : 'N/A'}`,
   ].join('\n');
 }
 
@@ -107,7 +107,7 @@ export function formatMorningBriefing(events: DbEvent[], date: Date, userTimezon
       }
       msg += `  • *${escapeMarkdownV2(time)}* — ${escapeMarkdownV2(e.currency)} ${escapeMarkdownV2(e.title)}`;
       if (e.forecast) {
-        msg += ` _\\(Dự báo: ${escapeMarkdownV2(e.forecast)}\\)_`;
+        msg += ` _\\(Dự báo: ${escapeMarkdownV2(String(e.forecast))}\\)_`;
       }
       msg += '\n';
     });
@@ -134,29 +134,37 @@ export function formatPreAlert(event: DbEvent, minutesBefore: number, userTimezo
     ``,
     `${emoji} *${escapeMarkdownV2(event.title)}*`,
     `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
-    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(event.forecast) : 'N/A'}`,
-    `📈 Trước: ${event.previous ? escapeMarkdownV2(event.previous) : 'N/A'}`,
+    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(String(event.forecast)) : 'N/A'}`,
+    `📈 Trước: ${event.previous ? escapeMarkdownV2(String(event.previous)) : 'N/A'}`,
     ``,
     `_Nguồn: ForexFactory_`,
   ].join('\n');
 }
 
-export function formatSettings(settings: UserSettings): string {
-  const impactFilter = settings.impact_filter.join(', ');
-  const currencyFilter = settings.currency_filter && settings.currency_filter.length > 0
+export function formatSettings(settings: UserSettings, user: any): string {
+  const impactList = settings.impact_filter?.length
+    ? settings.impact_filter.join(', ')
+    : 'Không có';
+    
+  const currencyList = settings.currency_filter?.length
     ? settings.currency_filter.join(', ')
     : 'Tất cả';
+  
+  const status = user.is_active ? '✅ Đang hoạt động' : '❌ Chưa subscribe';
 
-  return [
-    `⚙️ *CẤU HÌNH NHẬN THÔNG BÁO CỦA BẠN*`,
-    ``,
-    `🌅 *Bản tin sáng*: ${settings.morning_enabled ? '✅ Bật' : '❌ Tắt'}`,
-    `⏰ *Giờ nhận bản tin*: \`${escapeMarkdownV2(settings.morning_time)}\``,
-    `⚠️ *Cảnh báo trước*: ${settings.alert_enabled ? '✅ Bật' : '❌ Tắt'}`,
-    `🔔 *Thời gian báo trước*: \`${settings.alert_minutes} phút\``,
-    `🔴 *Mức độ tác động*: \`${escapeMarkdownV2(impactFilter)}\``,
-    `💱 *Cặp tiền lọc*: \`${escapeMarkdownV2(currencyFilter)}\``,
-  ].join('\n');
+  return (
+    '⚙️ CÀI ĐẶT HIỆN TẠI\n' +
+    '━━━━━━━━━━━━━━━━━━━━━━\n\n' +
+    `📡 Trạng thái: ${status}\n\n` +
+    `🌅 Bản tin sáng: ${settings.morning_enabled ? '✅ Bật' : '❌ Tắt'}\n` +
+    `⏰ Giờ nhận bản tin: ${settings.morning_time ?? '08:00'}\n\n` +
+    `⚠️ Cảnh báo trước: ${settings.alert_enabled ? '✅ Bật' : '❌ Tắt'}\n` +
+    `🔔 Thời gian báo trước: ${settings.alert_minutes ?? 15} phút\n\n` +
+    `🎯 Mức độ tác động:\n  ${settings.impact_filter?.map(i => `• ${i}`).join('\n  ') ?? '• Không có'}\n\n` +
+    `💱 Đồng tiền lọc: ${currencyList}\n\n` +
+    '━━━━━━━━━━━━━━━━━━━━━━\n' +
+    'Dùng /setimpact, /setcurrency, /settime, /setalert để thay đổi'
+  );
 }
 
 export function formatEventList(events: DbEvent[], userTimezone: string): string {
@@ -177,9 +185,9 @@ export function formatEventList(events: DbEvent[], userTimezone: string): string
       }
       let detail = `${emoji} \`${escapeMarkdownV2(time)}\` *${escapeMarkdownV2(e.currency)}* — ${escapeMarkdownV2(e.title)}`;
       if (e.actual) {
-        detail += `\n    🎯 Thực tế: *${escapeMarkdownV2(e.actual)}*`;
+        detail += `\n    🎯 Thực tế: *${escapeMarkdownV2(String(e.actual))}*`;
       } else if (e.forecast) {
-        detail += `\n    📊 Dự báo: ${escapeMarkdownV2(e.forecast)}`;
+        detail += `\n    📊 Dự báo: ${escapeMarkdownV2(String(e.forecast))}`;
       }
       return detail;
     })

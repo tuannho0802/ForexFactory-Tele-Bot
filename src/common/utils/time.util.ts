@@ -1,4 +1,4 @@
-import { toZonedTime, fromZonedTime, format } from 'date-fns-tz';
+import { toZonedTime, fromZonedTime, format, formatInTimeZone } from 'date-fns-tz';
 
 export function toUtcTime(localTime: string, localDate: string, sourceTimezone: string = 'America/New_York'): Date {
   const localDateTime = `${localDate}T${localTime}:00`;
@@ -28,4 +28,12 @@ export function formatUtcToLocal(utcTimeStr: string, userTimezone: string): stri
     return format(zoned, 'HH:mm');
   }
   return utcTimeStr;
+}
+
+export function getTodayUTC(): string {
+  return formatInTimeZone(new Date(), 'UTC', 'yyyy-MM-dd');
+}
+
+export function getNowUTC(): Date {
+  return new Date(); // JS Date is always UTC internally
 }

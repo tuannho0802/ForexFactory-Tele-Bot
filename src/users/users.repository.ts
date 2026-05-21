@@ -48,6 +48,30 @@ export class UsersRepository {
     }
   }
 
+  async registerUserInactive(telegramId: number, username?: string, firstName?: string): Promise<void> {
+    const { error } = await this.supabase.getClient()
+      .from('users')
+      .upsert(
+        {
+          telegram_id: telegramId,
+          username: username ?? null,
+          first_name: firstName ?? null,
+          is_active: false,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'telegram_id', ignoreDuplicates: false }
+      );
+    if (error) throw error;
+  }
+
+  async activateUser(userId: string): Promise<void> {
+    const { error } = await this.supabase.getClient()
+      .from('users')
+      .update({ is_active: true, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (error) throw error;
+  }
+
   async getUserByTelegramId(telegramId: number): Promise<User | null> {
     try {
       const client = this.supabase.getClient();

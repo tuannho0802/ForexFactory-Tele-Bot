@@ -24,6 +24,24 @@ export class UsersService {
     }
   }
 
+  async registerUserInactive(telegramId: number, username?: string, firstName?: string): Promise<void> {
+    try {
+      await this.usersRepository.registerUserInactive(telegramId, username, firstName);
+    } catch (error: any) {
+      this.logger.error(`Failed to register inactive user: ${telegramId}`, error.stack);
+      throw error;
+    }
+  }
+
+  async activateUser(userId: string): Promise<void> {
+    try {
+      await this.usersRepository.activateUser(userId);
+    } catch (error: any) {
+      this.logger.error(`Failed to activate user: ${userId}`, error.stack);
+      throw error;
+    }
+  }
+
   async getUser(telegramId: number): Promise<User | null> {
     try {
       return await this.usersRepository.getUserByTelegramId(telegramId);
