@@ -1,99 +1,187 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# 📊 ForexFactory Telegram Bot
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Bot Telegram tự động gửi thông báo lịch kinh tế từ [ForexFactory](https://www.forexfactory.com/), hỗ trợ cá nhân hóa theo mức độ tác động, đồng tiền và múi giờ người dùng.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## ✨ Tính năng
 
-## Description
+- 📅 **`/today`** – Xem sự kiện kinh tế hôm nay theo bộ lọc cá nhân (timezone-aware).
+- 📆 **`/next`** – Xem sự kiện tuần sau.
+- ⏰ **Bản tin sáng** – Tự động gửi tổng hợp sự kiện vào giờ tùy chọn mỗi ngày.
+- 🔔 **Cảnh báo trước sự kiện** – Nhận thông báo trước X phút khi sự kiện quan trọng sắp diễn ra.
+- 🌍 **Múi giờ cá nhân** – Hiển thị thời gian sự kiện theo múi giờ người dùng (`/settimezone`).
+- 🎯 **Lọc theo tác động** – Chỉ nhận tin High, Medium, hoặc Low impact (`/setimpact`).
+- 💱 **Lọc theo đồng tiền** – Chỉ nhận tin USD, EUR, GBP... (`/setcurrency`).
+- 🔄 **Cron jobs 24/7** – Tự động scrape dữ liệu và gửi thông báo qua Vercel Cron.
+- 📡 **Realtime updates** – Thông báo ngay khi có sự kiện mới hoặc số liệu thực tế (actual) được cập nhật.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 🛠 Công nghệ
 
-## Project setup
+| Thành phần | Công nghệ |
+|------------|-----------|
+| **Backend** | [NestJS](https://nestjs.com/) (TypeScript) |
+| **Database** | [Supabase](https://supabase.com/) (PostgreSQL) |
+| **Telegram API** | [Telegraf](https://telegraf.js.org/) + [nestjs-telegraf](https://github.com/bukhalo/nestjs-telegraf) |
+| **Scraping** | [Cheerio](https://cheerio.js.org/), [fast-xml-parser](https://github.com/NaturalIntelligence/fast-xml-parser) |
+| **Deploy** | [Vercel](https://vercel.com/) (Serverless + Cron Jobs) |
+| **Logging** | [Pino](https://getpino.io/) (nestjs-pino) |
+| **Date/Time** | [date-fns](https://date-fns.org/) + [date-fns-tz](https://github.com/marnusw/date-fns-tz) |
+| **Validation** | [Zod](https://zod.dev/) |
 
-```bash
-$ npm install
+## 📁 Cấu trúc thư mục
+
+```
+Forex-Bot-Tele/
+├── docs/                   # Tài liệu dự án
+│   └── workflows.md        # Lịch sử thay đổi (append-only)
+├── src/
+│   ├── common/             # Guards, utils (time.util.ts)
+│   ├── config/             # Cấu hình ứng dụng
+│   ├── cron/               # Cron service & controller
+│   ├── events/             # Event repository, service, types
+│   ├── notification/       # Notification service (morning, alerts, updates)
+│   ├── scraper/            # ForexFactory scraper (JSON/XML/HTML fallback)
+│   ├── supabase/           # Supabase client service
+│   ├── telegram/           # Telegram bot commands & message formatter
+│   ├── users/              # User repository, service, types
+│   ├── app.module.ts       # Root module
+│   └── main.ts             # Entry point
+├── supabase/
+│   └── migrations/         # Database migrations
+├── vercel.json             # Vercel deployment config
+├── .env.example            # Mẫu biến môi trường
+└── package.json
 ```
 
-## Compile and run the project
+## 🚀 Cài đặt & Chạy local
+
+### 1. Clone repo
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+git clone https://github.com/tuannho0802/ForexFactory-Tele-Bot.git
+cd ForexFactory-Tele-Bot
 ```
 
-## Run tests
+### 2. Cài dependencies
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
 
-## Deployment
+### 3. Tạo file `.env`
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Copy từ `.env.example` và điền các giá trị:
 
 ```bash
-$ npm install -g mau
-$ mau deploy
+cp .env.example .env
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Các biến môi trường cần thiết:
 
-## Resources
+| Biến | Mô tả |
+|------|--------|
+| `TELEGRAM_BOT_TOKEN` | Token từ [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret để xác thực webhook |
+| `SUPABASE_URL` | URL của Supabase project |
+| `SUPABASE_SERVICE_KEY` | Service role key của Supabase |
+| `CRON_SECRET` | Secret để bảo vệ cron endpoints |
+| `ADMIN_TELEGRAM_ID` | Chat ID của admin (nhận cảnh báo lỗi) |
+| `NODE_ENV` | `development` hoặc `production` |
+| `TZ` | `UTC` (khuyến nghị) |
 
-Check out a few resources that may come in handy when working with NestJS:
+### 4. Chạy database migration
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Truy cập Supabase SQL Editor và chạy các migration trong `supabase/migrations/`.
 
-## Support
+Nếu chưa có cột `timezone`, chạy thêm:
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```sql
+ALTER TABLE user_settings
+ADD COLUMN IF NOT EXISTS timezone TEXT DEFAULT 'Asia/Ho_Chi_Minh';
+```
 
-## Stay in touch
+### 5. Chạy ứng dụng
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```bash
+# Development (hot reload)
+npm run start:dev
 
-## License
+# Production
+npm run build
+npm run start:prod
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## ☁️ Triển khai lên Vercel
+
+### 1. Cấu hình `vercel.json`
+
+File `vercel.json` đã được cấu hình sẵn với các routes:
+
+- `/webhook/telegram` – Nhận webhook từ Telegram
+- `/api/cron/scan` – Cron job scrape dữ liệu
+- `/api/cron/morning` – Cron job gửi bản tin sáng
+- `/api/cron/alerts` – Cron job cảnh báo trước sự kiện
+
+### 2. Đặt biến môi trường
+
+Trên Vercel Dashboard → Settings → Environment Variables, thêm tất cả biến từ `.env`.
+
+### 3. Deploy
+
+```bash
+# Qua Vercel CLI
+npm i -g vercel
+vercel --prod
+
+# Hoặc qua GitHub integration (tự động deploy khi push)
+```
+
+### 4. Cấu hình Cron Jobs
+
+Trên Vercel Dashboard → Settings → Cron Jobs, thêm:
+
+| Endpoint | Schedule | Mô tả |
+|----------|----------|-------|
+| `/api/cron/scan` | `*/10 * * * *` | Scrape mỗi 10 phút |
+| `/api/cron/morning` | `* * * * *` | Kiểm tra gửi bản tin sáng mỗi phút |
+| `/api/cron/alerts` | `* * * * *` | Kiểm tra cảnh báo trước sự kiện mỗi phút |
+
+> **Lưu ý:** Các cron endpoints được bảo vệ bởi `CronAuthGuard` sử dụng header `Authorization: Bearer <CRON_SECRET>`.
+
+## 🤖 Lệnh Telegram
+
+| Lệnh | Mô tả |
+|-------|--------|
+| `/start` | Đăng ký tài khoản (trạng thái inactive) |
+| `/subscribe` | Kích hoạt nhận thông báo |
+| `/unsubscribe` | Tắt nhận thông báo |
+| `/today` | Xem lịch kinh tế hôm nay (theo timezone & bộ lọc) |
+| `/next` | Xem lịch kinh tế tuần sau |
+| `/settings` | Xem cài đặt hiện tại |
+| `/setimpact High Medium` | Đặt bộ lọc mức độ tác động |
+| `/setcurrency USD EUR GBP` | Đặt bộ lọc đồng tiền (`all` = tất cả) |
+| `/settimezone Asia/Ho_Chi_Minh` | Đặt múi giờ ([danh sách IANA](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)) |
+| `/settime 08:00` | Đặt giờ nhận bản tin sáng |
+| `/setalert 15` | Đặt thời gian cảnh báo trước sự kiện (phút) |
+| `/help` | Xem hướng dẫn chi tiết |
+| `/debug` | Xem thông tin debug (admin) |
+| `/dbstatus` | Kiểm tra trạng thái database (admin) |
+
+## 📖 Tài liệu thêm
+
+Xem thư mục [`docs/`](docs/) để biết thêm chi tiết:
+
+- **[`workflows.md`](docs/workflows.md)** – Lịch sử thay đổi và phát triển (append-only log).
+
+## 📝 Đóng góp
+
+1. Fork repo
+2. Tạo branch mới: `git checkout -b feature/ten-tinh-nang`
+3. Commit: `git commit -m "Thêm tính năng X"`
+4. Push: `git push origin feature/ten-tinh-nang`
+5. Tạo Pull Request
+
+> Khi có thay đổi lớn, hãy cập nhật `docs/workflows.md` theo nguyên tắc append-only.
+
+## 📄 License
+
+UNLICENSED – Dự án riêng tư.
