@@ -2,68 +2,41 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger } from 'nestjs-pino';
 import { ValidationPipe } from '@nestjs/common';
-import * as express from 'express';
 import { ExpressAdapter } from '@nestjs/platform-express';
-import * as serverlessExpress from 'serverless-http';
+import * as express from 'express';
+import * as serverless from 'serverless-http';
 
-// Express instance used for serverless mode
-const expressApp = express();
-
-let serverlessHandler: any;
+let cachedServer: any;
 
 async function bootstrap() {
-  const app = await NestFactory.create(
-    AppModule,
-    new ExpressAdapter(expressApp),
-    { bufferLogs: true }
-  );
+  if (!cachedServer) {
+    const expressApp = express();
+    const app = await NestFactory.create(
+      AppModule,
+      new ExpressAdapter(expressApp),
+      { bufferLogs: true }
+    );
 
-  // Use nestjs-pino as global logger
-  app.useLogger(app.get(Logger));
-
-  // Enable global validation pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    })
-  );
-
-  await app.init();
-  
-  return serverlessExpress(expressApp);
-}
-
-// In serverless environments, we export the handler as default for Vercel
-export default async (req: any, res: any) => {
-  if (!serverlessHandler) {
-    serverlessHandler = await bootstrap();
-  }
-  return serverlessHandler(req, res);
-};
-
-// Local development server runner
-async function bootstrapLocal() {
-  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    const app = await NestFactory.create(AppModule, { bufferLogs: true });
-    
     // Use nestjs-pino as global logger
     app.useLogger(app.get(Logger));
-    
+
+    // Enable global validation pipe
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
         transform: true,
+        forbidNonWhitelisted: true,
       })
     );
 
-    const port = process.env.PORT || 3000;
-    await app.listen(port);
-    const appLogger = app.get(Logger);
-    appLogger.log(`Application is running locally on: http://localhost:${port}`);
+    await app.init();
+    cachedServer = serverless(expressApp);
   }
+  return cachedServer;
 }
 
-// If running locally, start server
-bootstrapLocal();
+// Export the serverless handler
+export default async (req: any, res: any) => {
+  const server = await bootstrap();
+  return server(req, res);
+};
