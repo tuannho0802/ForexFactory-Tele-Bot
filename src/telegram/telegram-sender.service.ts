@@ -20,29 +20,44 @@ export class TelegramSenderService {
    */
   async sendToMany(recipients: Array<{ chatId: number; message: string }>): Promise<void> {
     for (const { chatId, message } of recipients) {
-      try {
-        await this.bot.telegram.sendMessage(chatId, message, { parse_mode: 'MarkdownV2' });
-      } catch (err: any) {
-        const code = err.code ?? err.response?.error_code;
+      // Split message if it's a multi-part formatEventList (joined by \n\n\n)
+      const parts = message.split('\n\n\n').filter((p) => p.trim().length > 0);
 
-        if (code === 403) {
-          // User blocked the bot — deactivate them
-          this.logger.warn(`User ${chatId} blocked the bot (403). Deactivating.`);
-          await this.usersService.deactivateUser(chatId).catch((deactivateErr: any) => {
-            this.logger.error(`Failed to deactivate user ${chatId}`, deactivateErr.stack);
+      for (const part of parts) {
+        try {
+          this.logger.debug(`Sending message to ${chatId}:\n${part}`);
+          await this.bot.telegram.sendMessage(chatId, part, {
+            parse_mode: 'MarkdownV2',
+            link_preview_options: { is_disabled: true },
           });
-        } else if (code === 429) {
-          // Telegram rate limit — wait and retry once
-          const retryAfter = (err.parameters?.retry_after ?? err.response?.parameters?.retry_after ?? 5) * 1000;
-          this.logger.warn(`Telegram rate limit (429) for chat ${chatId}. Waiting ${retryAfter}ms then retrying.`);
-          await sleep(retryAfter);
-          try {
-            await this.bot.telegram.sendMessage(chatId, message, { parse_mode: 'MarkdownV2' });
-          } catch (retryErr: any) {
-            this.logger.error(`Retry failed for chat ${chatId}`, retryErr.stack);
+        } catch (err: any) {
+          const code = err.code ?? err.response?.error_code;
+
+          if (code === 403) {
+            // User blocked the bot — deactivate them
+            this.logger.warn(`User ${chatId} blocked the bot (403). Deactivating.`);
+            await this.usersService.deactivateUser(chatId).catch((deactivateErr: any) => {
+              this.logger.error(`Failed to deactivate user ${chatId}`, deactivateErr.stack);
+            });
+          } else if (code === 429) {
+            // Telegram rate limit — wait and retry once
+            const retryAfter =
+              (err.parameters?.retry_after ?? err.response?.parameters?.retry_after ?? 5) * 1000;
+            this.logger.warn(
+              `Telegram rate limit (429) for chat ${chatId}. Waiting ${retryAfter}ms then retrying.`,
+            );
+            await sleep(retryAfter);
+            try {
+              await this.bot.telegram.sendMessage(chatId, part, {
+                parse_mode: 'MarkdownV2',
+                link_preview_options: { is_disabled: true },
+              });
+            } catch (retryErr: any) {
+              this.logger.error(`Retry failed for chat ${chatId}`, retryErr.stack);
+            }
+          } else {
+            this.logger.error(`Failed to send message to ${chatId}: ${err.message}`, err.stack);
           }
-        } else {
-          this.logger.error(`Failed to send message to ${chatId}: ${err.message}`, err.stack);
         }
       }
 
@@ -50,6 +65,7 @@ export class TelegramSenderService {
       await sleep(50);
     }
   }
+
 
   /**
    * Convenience wrapper to send a single message.

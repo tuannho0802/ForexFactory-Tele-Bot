@@ -4,7 +4,7 @@ import { EventsService } from '../events/events.service';
 import { NotificationService } from '../notification/notification.service';
 import { TelegramSenderService } from '../telegram/telegram-sender.service';
 import { ConfigService } from '@nestjs/config';
-import { escapeMarkdownV2 } from '../telegram/message-formatter';
+import { escapeMarkdownV2 } from '../common/utils/string.util';
 
 @Injectable()
 export class CronService {

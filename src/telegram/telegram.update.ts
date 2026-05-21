@@ -4,14 +4,15 @@ import { Logger } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { EventsService } from '../events/events.service';
 import {
-  escapeMarkdownV2,
   formatSettings,
   formatEventList,
 } from './message-formatter';
+import { escapeMarkdownV2 } from '../common/utils/string.util';
 import { getTodayUTC, getTodayInTimezone, isEventOnDate } from '../common/utils/time.util';
 import { subDays, addDays } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { ForexFactoryService } from '../scraper/forex-factory.service';
+import { TelegramSenderService } from './telegram-sender.service';
 
 @Update()
 export class TelegramUpdate {
@@ -20,7 +21,8 @@ export class TelegramUpdate {
   constructor(
     private readonly usersService: UsersService,
     private readonly eventsService: EventsService,
-    private readonly forexFactoryService: ForexFactoryService
+    private readonly forexFactoryService: ForexFactoryService,
+    private readonly telegramSender: TelegramSenderService
   ) {}
 
   @Start()
@@ -438,24 +440,15 @@ export class TelegramUpdate {
           currencyFilter: settings?.currency_filter,
         }, '⚠️ No events after filtering!');
 
-        await ctx.reply(
-          `📅 Lịch kinh tế ${todayInUserTz}\n\n` +
-          `Không có sự kiện nào khớp với bộ lọc của bạn.\n` +
-          `Dùng /setimpact hoặc /setcurrency để thay đổi bộ lọc.`
-        );
+        const emptyMsg = formatEventList([], tz, todayDate, 'Lịch Kinh Tế Hôm Nay');
+        await ctx.replyWithMarkdownV2(emptyMsg);
         return;
       }
 
-      const chunkSize = 10;
-      for (let i = 0; i < filtered.length; i += chunkSize) {
-        const chunk = filtered.slice(i, i + chunkSize);
-        const formatted = formatEventList(chunk, tz);
-        const pageHeader = filtered.length > chunkSize 
-          ? `📅 *LỊCH KINH TẾ HÔM NAY \\(Phần ${Math.floor(i / chunkSize) + 1}\\)*\n\n`
-          : `📅 *LỊCH KINH TẾ HÔM NAY \\(${escapeMarkdownV2(todayInUserTz)}\\)*\n\n`;
-        await ctx.replyWithMarkdownV2(pageHeader + formatted);
-      }
+      const formatted = formatEventList(filtered, tz, todayDate, 'Lịch Kinh Tế Hôm Nay');
+      await this.telegramSender.sendOne(ctx.from!.id, formatted);
     } catch (error: any) {
+
       this.logger.error('Error in /today handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi lấy lịch kinh tế hôm nay.');
     }
@@ -488,12 +481,14 @@ export class TelegramUpdate {
       }
 
       if (filteredEvents.length === 0) {
-        return ctx.replyWithMarkdownV2(`🔔 *SỰ KIỆN SẮP DIỄN RA TRONG 2 GIỜ TỚI*\n\n_Không có sự kiện kinh tế quan trọng nào sắp diễn ra phù hợp với cấu hình lọc của bạn\\._`);
+        const emptyMsg = formatEventList([], userTimezone, nowUtc, 'Sự Kiện Sắp Diễn Ra');
+        return ctx.replyWithMarkdownV2(emptyMsg);
       }
 
-      const formatted = formatEventList(filteredEvents, userTimezone);
-      await ctx.replyWithMarkdownV2(`🔔 *SỰ KIỆN SẮP DIỄN RA TRONG 2 GIỜ TỚI*\n\n` + formatted);
+      const formatted = formatEventList(filteredEvents, userTimezone, nowUtc, 'Sự Kiện Sắp Diễn Ra');
+      await this.telegramSender.sendOne(ctx.from!.id, formatted);
     } catch (error: any) {
+
       this.logger.error('Error in /next handler', error.stack);
       await ctx.reply('Đã xảy ra lỗi khi kiểm tra sự kiện tiếp theo.');
     }

@@ -1,198 +1,152 @@
 import { UserSettings } from '../users/users.types';
 import { DbEvent } from '../events/events.types';
-import { formatForUser, formatUtcToLocal } from '../common/utils/time.util';
-
-export function escapeMarkdownV2(text: string | null | undefined): string {
-  if (!text) return '';
-  return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
-}
+import { formatUtcToLocal } from '../common/utils/time.util';
+import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
+import { vi } from 'date-fns/locale';
+import { escapeMarkdownV2 } from '../common/utils/string.util';
 
 const IMPACT_EMOJIS: Record<string, string> = {
   High: '🔴',
   Medium: '🟡',
   Low: '🟢',
-  Holiday: '🏖️',
+  Holiday: '⚪',
 };
 
-export function formatNewEvent(event: DbEvent, userTimezone: string): string {
-  const emoji = IMPACT_EMOJIS[event.impact] || 'ℹ️';
-  let timeStr = '⏰ All Day';
-  if (event.event_time) {
+const DIVIDER = '━━━━━━━━━━━━━━━━━━━━━';
+const FOOTER = '\n_📊 Dữ liệu từ Forex Factory_';
+
+function formatEventBlock(e: DbEvent, userTimezone: string): string {
+  const emoji = IMPACT_EMOJIS[e.impact] || '⚪';
+  let time = 'All Day';
+  if (e.event_time) {
     try {
-      const utcDate = new Date(`${event.event_date}T${event.event_time}Z`);
-      timeStr = `⏰ ${escapeMarkdownV2(formatForUser(utcDate, userTimezone))}`;
-    } catch (e) {
-      timeStr = `⏰ ${escapeMarkdownV2(event.event_time)}`;
+      time = formatUtcToLocal(e.event_time, userTimezone);
+    } catch {
+      time = e.event_time.slice(0, 5);
     }
   }
 
-  const lines = [
-    `📌 *TIN MỚI XUẤT HIỆN*`,
-    ``,
-    `${emoji} *${escapeMarkdownV2(event.title)}*`,
-    `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
-    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(String(event.forecast)) : 'N/A'}`,
-    `📈 Trước: ${event.previous ? escapeMarkdownV2(String(event.previous)) : 'N/A'}`,
-  ];
+  let block = `${DIVIDER}\n`;
+  block += `${emoji} ${escapeMarkdownV2(time)} • ${escapeMarkdownV2(e.currency)}\n`;
+  block += `*${escapeMarkdownV2(e.title)}*\n`;
 
-  if (event.detail_url) {
-    lines.push(`🔗 [Xem chi tiết](${escapeMarkdownV2(String(event.detail_url))})`);
+  const dataLines: string[] = [];
+  if (e.actual) dataLines.push(`🎯 Thực tế: *${escapeMarkdownV2(String(e.actual))}*`);
+  if (e.forecast) dataLines.push(`📊 Dự báo: ${escapeMarkdownV2(String(e.forecast))}`);
+  if (e.previous) dataLines.push(`📉 Trước: ${escapeMarkdownV2(String(e.previous))}`);
+
+  if (dataLines.length > 0) {
+    block += dataLines.join(' \\| ') + '\n';
   }
 
-  return lines.join('\n');
+  return block;
+}
+
+function getHeader(date: Date, userTimezone: string, title: string): string {
+  const zonedDate = toZonedTime(date, userTimezone);
+  const dateStr = formatInTimeZone(zonedDate, userTimezone, "eeee, dd/MM/yyyy", { locale: vi });
+  const capitalizedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+  const tzOffset = formatInTimeZone(zonedDate, userTimezone, "xxx");
+  
+  return `📅 *${escapeMarkdownV2(title)}*\n🕒 ${escapeMarkdownV2(capitalizedDate)} \\(UTC${escapeMarkdownV2(tzOffset)}\\)\n`;
+}
+
+export function formatNewEvent(event: DbEvent, userTimezone: string): string {
+  let msg = `📌 *TIN MỚI XUẤT HIỆN*\n`;
+  msg += formatEventBlock(event, userTimezone);
+  msg += DIVIDER;
+  msg += FOOTER;
+  return msg;
 }
 
 export function formatActualUpdate(event: DbEvent, userTimezone: string): string {
-  const emoji = IMPACT_EMOJIS[event.impact] || 'ℹ️';
-  let timeStr = '⏰ All Day';
-  if (event.event_time) {
-    try {
-      const utcDate = new Date(`${event.event_date}T${event.event_time}Z`);
-      timeStr = `⏰ ${escapeMarkdownV2(formatForUser(utcDate, userTimezone))}`;
-    } catch (e) {
-      timeStr = `⏰ ${escapeMarkdownV2(event.event_time)}`;
-    }
-  }
-
-  return [
-    `📢 *CẬP NHẬT KẾT QUẢ THỰC TẾ*`,
-    ``,
-    `${emoji} *${escapeMarkdownV2(event.title)}*`,
-    `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
-    `🎯 *Thực tế: ${escapeMarkdownV2(String(event.actual))}*`,
-    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(String(event.forecast)) : 'N/A'}`,
-    `📈 Trước: ${event.previous ? escapeMarkdownV2(String(event.previous)) : 'N/A'}`,
-  ].join('\n');
+  let msg = `✅ *CẬP NHẬT KẾT QUẢ THỰC TẾ*\n`;
+  msg += formatEventBlock(event, userTimezone);
+  msg += DIVIDER;
+  msg += FOOTER;
+  return msg;
 }
 
 export function formatMorningBriefing(events: DbEvent[], date: Date, userTimezone: string): string {
-  const dateStr = date.toLocaleDateString('vi-VN', { timeZone: userTimezone });
-  
-  let msg = `📅 *LỊCH KINH TẾ HÔM NAY — ${escapeMarkdownV2(dateStr)}*\n\n`;
-
   if (events.length === 0) {
-    msg += `_Không có tin tức kinh tế quan trọng nào diễn ra hôm nay\\._`;
-    return msg;
+    return `${getHeader(date, userTimezone, 'Lịch Kinh Tế Hôm Nay')}\n_Không có tin tức kinh tế quan trọng nào diễn ra hôm nay\\._${FOOTER}`;
   }
 
-  const grouped: Record<string, DbEvent[]> = {
-    High: [],
-    Medium: [],
-    Low: [],
-    Holiday: [],
-  };
-
-  events.forEach((e) => {
-    if (grouped[e.impact]) {
-      grouped[e.impact].push(e);
-    }
-  });
-
-  const order = ['High', 'Medium', 'Low', 'Holiday'];
-  for (const impact of order) {
-    const list = grouped[impact];
-    if (!list || list.length === 0) continue;
-
-    const emoji = IMPACT_EMOJIS[impact] || 'ℹ️';
-    msg += `${emoji} *${impact} Impact*\n`;
-
-    list.forEach((e) => {
-      let time = 'All Day';
-      if (e.event_time) {
-        try {
-          time = formatUtcToLocal(e.event_time, userTimezone);
-        } catch {
-          time = e.event_time.slice(0, 5);
-        }
-      }
-      msg += `  • *${escapeMarkdownV2(time)}* — ${escapeMarkdownV2(e.currency)} ${escapeMarkdownV2(e.title)}`;
-      if (e.forecast) {
-        msg += ` _\\(Dự báo: ${escapeMarkdownV2(String(e.forecast))}\\)_`;
-      }
-      msg += '\n';
-    });
-    msg += '\n';
-  }
-
-  return msg.trim();
+  return formatEventList(events, userTimezone, date, 'Lịch Kinh Tế Hôm Nay');
 }
 
 export function formatPreAlert(event: DbEvent, minutesBefore: number, userTimezone: string): string {
-  const emoji = IMPACT_EMOJIS[event.impact] || 'ℹ️';
-  let timeStr = '⏰ All Day';
-  if (event.event_time) {
-    try {
-      const utcDate = new Date(`${event.event_date}T${event.event_time}Z`);
-      timeStr = `⏰ ${escapeMarkdownV2(formatForUser(utcDate, userTimezone))}`;
-    } catch (e) {
-      timeStr = `⏰ ${escapeMarkdownV2(event.event_time)}`;
-    }
-  }
-
-  return [
-    `⚠️ *SẮP DIỄN RA TRONG ${minutesBefore} PHÚT*`,
-    ``,
-    `${emoji} *${escapeMarkdownV2(event.title)}*`,
-    `💱 *${escapeMarkdownV2(event.currency)}* \\| ${timeStr}`,
-    `📊 Dự báo: ${event.forecast ? escapeMarkdownV2(String(event.forecast)) : 'N/A'}`,
-    `📈 Trước: ${event.previous ? escapeMarkdownV2(String(event.previous)) : 'N/A'}`,
-    ``,
-    `_Nguồn: ForexFactory_`,
-  ].join('\n');
+  let msg = `⚠️ *SẮP DIỄN RA TRONG ${minutesBefore} PHÚT*\n`;
+  msg += formatEventBlock(event, userTimezone);
+  msg += DIVIDER;
+  msg += FOOTER;
+  return msg;
 }
 
 export function formatSettings(settings: UserSettings, user: any): string {
-  const impactList = settings.impact_filter?.length
-    ? settings.impact_filter.join(', ')
-    : 'Không có';
-    
   const currencyList = settings.currency_filter?.length
     ? settings.currency_filter.join(', ')
     : 'Tất cả';
   
   const status = user.is_active ? '✅ Đang hoạt động' : '❌ Chưa subscribe';
   const tz = settings.timezone || 'Asia/Ho_Chi_Minh';
+  const morningTime = settings.morning_time ?? '08:00';
+  const alertMins = settings.alert_minutes ?? 15;
 
   return (
-    '⚙️ CÀI ĐẶT HIỆN TẠI\n' +
+    '⚙️ *CÀI ĐẶT HIỆN TẠI*\n' +
     '━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-    `📡 Trạng thái: ${status}\n\n` +
+    `📡 Trạng thái: ${escapeMarkdownV2(status)}\n\n` +
     `🌅 Bản tin sáng: ${settings.morning_enabled ? '✅ Bật' : '❌ Tắt'}\n` +
-    `⏰ Giờ nhận bản tin: ${settings.morning_time ?? '08:00'} (${tz})\n\n` +
+    `⏰ Giờ nhận bản tin: ${escapeMarkdownV2(morningTime)} \\(${escapeMarkdownV2(tz)}\\)\n\n` +
     `⚠️ Cảnh báo trước: ${settings.alert_enabled ? '✅ Bật' : '❌ Tắt'}\n` +
-    `🔔 Thời gian báo trước: ${settings.alert_minutes ?? 15} phút\n\n` +
-    `🕒 Múi giờ: ${tz}\n` +
-    `   (Dùng /settimezone để thay đổi)\n\n` +
-    `🎯 Mức độ tác động:\n  ${settings.impact_filter?.map(i => `• ${i}`).join('\n  ') ?? '• Không có'}\n\n` +
-    `💱 Đồng tiền lọc: ${currencyList}\n\n` +
+    `🔔 Thời gian báo trước: ${escapeMarkdownV2(String(alertMins))} phút\n\n` +
+    `🕒 Múi giờ: ${escapeMarkdownV2(tz)}\n` +
+    `   \\(Dùng /settimezone để thay đổi\\)\n\n` +
+    `🎯 Mức độ tác động:\n  ${settings.impact_filter?.map(i => `• ${escapeMarkdownV2(i)}`).join('\n  ') ?? '• Không có'}\n\n` +
+    `💱 Đồng tiền lọc: ${escapeMarkdownV2(currencyList)}\n\n` +
     '━━━━━━━━━━━━━━━━━━━━━━\n' +
     'Dùng /setimpact, /setcurrency, /settime, /setalert, /settimezone để thay đổi'
   );
 }
 
-export function formatEventList(events: DbEvent[], userTimezone: string): string {
+/**
+ * Formats a list of events into one or more messages (chunks) if needed.
+ * Returns an array of strings if multiple messages are needed, or just one string.
+ */
+export function formatEventList(
+  events: DbEvent[], 
+  userTimezone: string, 
+  date: Date = new Date(),
+  title: string = 'Lịch Kinh Tế'
+): string {
   if (events.length === 0) {
-    return `_Không có sự kiện nào được tìm thấy\\._`;
+    return `${getHeader(date, userTimezone, title)}\n_Không có sự kiện nào được tìm thấy\\._${FOOTER}`;
   }
 
-  return events
-    .map((e) => {
-      const emoji = IMPACT_EMOJIS[e.impact] || 'ℹ️';
-      let time = 'All Day';
-      if (e.event_time) {
-        try {
-          time = formatUtcToLocal(e.event_time, userTimezone);
-        } catch {
-          time = e.event_time.slice(0, 5);
-        }
-      }
-      let detail = `${emoji} \`${escapeMarkdownV2(time)}\` *${escapeMarkdownV2(e.currency)}* — ${escapeMarkdownV2(e.title)}`;
-      if (e.actual) {
-        detail += `\n    🎯 Thực tế: *${escapeMarkdownV2(String(e.actual))}*`;
-      } else if (e.forecast) {
-        detail += `\n    📊 Dự báo: ${escapeMarkdownV2(String(e.forecast))}`;
-      }
-      return detail;
-    })
-    .join('\n\n');
+  const CHUNK_SIZE = 10;
+  const chunks: string[] = [];
+  
+  for (let i = 0; i < events.length; i += CHUNK_SIZE) {
+    const chunkEvents = events.slice(i, i + CHUNK_SIZE);
+    const isMultiPart = events.length > CHUNK_SIZE;
+    const partTitle = isMultiPart ? `${title} (Phần ${chunks.length + 1})` : title;
+    
+    let msg = getHeader(date, userTimezone, partTitle);
+    
+    chunkEvents.forEach(e => {
+      msg += formatEventBlock(e, userTimezone);
+    });
+    
+    msg += DIVIDER;
+    msg += FOOTER;
+    chunks.push(msg);
+  }
+
+  // Note: The caller (TelegramSender) usually expects a single string for simple replies.
+  // If it's multi-part, we might need the caller to handle sending multiple messages.
+  // For now, return the first chunk if we can't change the caller easily, 
+  // or join them with a separator. But ideally, the controller should loop and send.
+  return chunks.join('\n\n\n'); 
 }
+
