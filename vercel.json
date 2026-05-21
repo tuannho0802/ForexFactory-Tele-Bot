@@ -1,29 +1,15 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "functions": {
-    "dist/main.js": {
+    "api/index.ts": {
       "memory": 256,
       "maxDuration": 30
     }
   },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/webhook/telegram",
-      "dest": "/dist/main.js"
-    },
-    {
-      "src": "/api/health",
-      "dest": "/dist/main.js"
-    },
-    {
-      "src": "/api/cron/(.*)",
-      "dest": "/dist/main.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/dist/main.js"
+      "source": "/(.*)",
+      "destination": "/api/index"
     }
   ]
 }
