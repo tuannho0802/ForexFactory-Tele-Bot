@@ -10,53 +10,62 @@ const serverless = require('serverless-http');
 let cachedServer: any;
 
 async function bootstrap() {
-  if (!cachedServer) {
-    console.log('--- BOOTSTRAP STARTING ---');
+  if (cachedServer) return cachedServer;
+
+  console.log('[Bootstrap] Starting NestJS application...');
+
+  const expressApp = express();
+  try {
+    const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
+      bufferLogs: true,
+      logger:
+        process.env.NODE_ENV === 'production'
+          ? ['error', 'warn']
+          : ['log', 'debug', 'error', 'warn', 'verbose'],
+    });
+
     try {
-      const expressApp = express();
-      const app = await NestFactory.create(
-        AppModule,
-        new ExpressAdapter(expressApp),
-        { bufferLogs: true }
+      const pinoLogger = app.get(Logger);
+      app.useLogger(pinoLogger);
+      console.log('[Bootstrap] Pino logger initialized');
+    } catch (loggerErr) {
+      console.warn(
+        '[Bootstrap] Could not initialize pino logger, using default:',
+        loggerErr,
       );
-
-      // Use nestjs-pino as global logger
-      app.useLogger(app.get(Logger));
-
-      // Enable global validation pipe
-      app.useGlobalPipes(
-        new ValidationPipe({
-          whitelist: true,
-          transform: true,
-          forbidNonWhitelisted: true,
-        })
-      );
-
-      await app.init();
-      cachedServer = serverless(expressApp);
-      console.log('--- BOOTSTRAP SUCCESSFUL ---');
-    } catch (error: any) {
-      console.error('--- BOOTSTRAP FAILED ---');
-      console.error(error);
-      throw error;
     }
+
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: false,
+      }),
+    );
+
+    await app.init();
+    cachedServer = serverless(expressApp);
+    console.log('[Bootstrap] Application initialized successfully');
+    return cachedServer;
+  } catch (error: any) {
+    console.error('[Fatal] Bootstrap error:', error?.message ?? error);
+    console.error(error?.stack ?? error);
+    throw error;
   }
-  return cachedServer;
 }
 
 export default async (req: any, res: any) => {
-  console.log(`[${new Date().toISOString()}] Request: ${req.method} ${req.url}`);
+  console.log(`[Request] ${req.method} ${req.url}`);
   try {
     const server = await bootstrap();
     return server(req, res);
   } catch (err: any) {
-    console.error('--- HANDLER FATAL ERROR ---');
-    console.error(err);
+    console.error('[Fatal] Bootstrap or handler error:', err?.message ?? err);
+    console.error(err?.stack ?? err);
     if (!res.headersSent) {
       res.status(500).json({
         error: 'Internal Server Error',
-        message: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        message: err?.message ?? String(err),
       });
     }
   }

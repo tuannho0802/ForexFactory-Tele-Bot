@@ -8,35 +8,63 @@ import serverless from 'serverless-http';
 
 let cachedServer: any;
 
-async function bootstrap() {
-  if (!cachedServer) {
-    const expressApp = express();
-    const app = await NestFactory.create(
-      AppModule,
-      new ExpressAdapter(expressApp),
-      { bufferLogs: true }
-    );
+async function bootstrapServerless() {
+  if (cachedServer) return cachedServer;
 
-    // Use nestjs-pino as global logger
+  const expressApp = express();
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
+    bufferLogs: true,
+  });
+
+  try {
     app.useLogger(app.get(Logger));
-
-    // Enable global validation pipe
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      })
-    );
-
-    await app.init();
-    cachedServer = serverless(expressApp);
+  } catch {
+    // ignore
   }
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    }),
+  );
+
+  await app.init();
+  cachedServer = serverless(expressApp);
   return cachedServer;
 }
 
-// Export the serverless handler
 export default async (req: any, res: any) => {
-  const server = await bootstrap();
+  const server = await bootstrapServerless();
   return server(req, res);
 };
+
+async function bootstrapLocal() {
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  try {
+    app.useLogger(app.get(Logger));
+  } catch {
+    // ignore
+  }
+
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: false,
+    }),
+  );
+
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port);
+  console.log(`[Local] Application is running on: http://localhost:${port}`);
+}
+
+if (!process.env.VERCEL && require.main === module) {
+  bootstrapLocal().catch((err) => {
+    console.error('Failed to start local server:', err);
+    process.exit(1);
+  });
+}

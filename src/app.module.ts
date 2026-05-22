@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { getConfig } from './config/configuration';
@@ -13,7 +12,6 @@ import { CronModule } from './cron/cron.module';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [getConfig],
@@ -21,16 +19,18 @@ import { CronModule } from './cron/cron.module';
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-        transport:
-          process.env.NODE_ENV === 'production'
-            ? undefined
-            : {
-                target: 'pino-pretty',
-                options: {
-                  colorize: true,
-                  singleLine: true,
-                },
-              },
+        formatters: {
+          level: (label: string) => ({ level: label }),
+        },
+        serializers: {
+          req: (req: any) => ({
+            method: req.method,
+            url: req.url,
+          }),
+          res: (res: any) => ({
+            statusCode: res.statusCode,
+          }),
+        },
       },
     }),
     SupabaseModule,
