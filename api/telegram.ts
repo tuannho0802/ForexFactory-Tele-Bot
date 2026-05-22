@@ -254,17 +254,20 @@ bot.command('setalert', async (ctx) => {
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 export default async (req: any, res: any) => {
+  if (req.method !== 'POST') {
+    return res
+      .status(200)
+      .json({ ok: true, message: 'Telegram webhook endpoint is running' });
+  }
+
   if (webhookSecret) {
     const tokenHeader =
       req.headers['x-telegram-bot-api-secret-token'] ??
       req.headers['X-Telegram-Bot-Api-Secret-Token'];
     if (tokenHeader !== webhookSecret) {
+      console.warn('[Webhook] Unauthorized - token mismatch');
       return res.status(401).json({ error: 'Unauthorized' });
     }
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(200).json({ ok: true });
   }
 
   try {
