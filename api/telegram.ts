@@ -6,6 +6,8 @@ type AnyRecord = Record<string, any>;
 const token = process.env.TELEGRAM_BOT_TOKEN!;
 const supabaseUrl = process.env.SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
+const cronSecret = process.env.CRON_SECRET;
+const adminId = process.env.ADMIN_TELEGRAM_ID;
 
 const bot = new Telegraf(token);
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -175,9 +177,24 @@ bot.command('today', async (ctx) => {
     console.log(`[/today] Found ${events?.length ?? 0} events for ${today}`);
 
     if (!events || events.length === 0) {
+      // Check if a scan is currently running
+      const { data: runningScan } = await supabase
+        .from('scan_log')
+        .select('*')
+        .eq('status', 'running')
+        .order('started_at', { ascending: false })
+        .limit(1);
+
+      if (runningScan && runningScan.length > 0) {
+        return ctx.reply(
+          `📅 Lịch kinh tế ${today}\n\n` +
+            `🔄 Dữ liệu đang được cập nhật từ ForexFactory... Vui lòng thử lại sau vài giây.`,
+        );
+      }
+
       return ctx.reply(
         `📅 Lịch kinh tế ${today}\n\n` +
-          `Không có sự kiện nào hôm nay. Có thể dữ liệu chưa được cập nhật.`,
+          `Chưa có dữ liệu cho hôm nay. Hãy dùng /scan để quét dữ liệu mới (chỉ dành cho Admin).`,
       );
     }
 
@@ -225,6 +242,44 @@ bot.command('today', async (ctx) => {
   } catch (err: any) {
     console.error('[/today] Unexpected error:', err.message, err.stack);
     await ctx.reply('❌ Đã xảy ra lỗi. Vui lòng thử lại sau.');
+  }
+});
+
+bot.command('scan', async (ctx) => {
+  const from = ctx.from;
+  if (!from) return;
+
+  // Check if user is admin
+  if (adminId && from.id.toString() !== adminId) {
+    return ctx.reply('❌ Lệnh này chỉ dành cho Admin.');
+  }
+
+  if (!cronSecret) {
+    return ctx.reply('❌ CRON_SECRET chưa được cấu hình.');
+  }
+
+  try {
+    console.log(`[/scan] Admin ${from.id} triggered manual scan`);
+    
+    // Trigger scan asynchronously (don't wait for it to finish as it can take 300s)
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : 'https://forex-factory-tele-bot.vercel.app';
+      
+    fetch(`${baseUrl}/api/cron/scan`, {
+      method: 'POST',
+      headers: {
+        'x-cron-secret': cronSecret,
+      },
+    }).catch(err => console.error('[/scan] Async fetch error:', err));
+
+    await ctx.reply(
+      '🔄 Đang quét dữ liệu... Quá trình có thể mất vài phút.\n' +
+      'Hãy dùng /today sau 2-3 phút để xem kết quả.'
+    );
+  } catch (err: any) {
+    console.error('[/scan] Error triggering scan:', err.message);
+    await ctx.reply('❌ Không thể kích hoạt quét dữ liệu.');
   }
 });
 
