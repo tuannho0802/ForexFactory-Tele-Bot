@@ -285,9 +285,10 @@ export default async (req: any, res: any) => {
       req.headers['x-telegram-bot-api-secret-token'] ??
       req.headers['X-Telegram-Bot-Api-Secret-Token'];
     
-    if (tokenHeader !== webhookSecret) {
+    // Chỉ từ chối nếu có token trong request nhưng không khớp.
+    // Nếu không có token trong request (ví dụ health check), bỏ qua xác thực.
+    if (tokenHeader && tokenHeader !== webhookSecret) {
       console.warn('[Webhook] Unauthorized - token mismatch');
-      // Trả về 200 thay vì 401 để Telegram không retry liên tục nếu cấu hình sai
       return res.status(200).json({ ok: false, error: 'Unauthorized' });
     }
   }
