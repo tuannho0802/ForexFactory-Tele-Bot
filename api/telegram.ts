@@ -103,21 +103,129 @@ bot.start(async (ctx) => {
 });
 
 bot.help(async (ctx) => {
-  await ctx.reply(
+  const helpText =
     '📖 HƯỚNG DẪN SỬ DỤNG FOREX NEWS BOT\n' +
-      '━━━━━━━━━━━━━━━━━━━━━━\n\n' +
-      '👤 BẮT ĐẦU\n' +
-      '/start — Đăng ký tài khoản\n' +
-      '/subscribe — Bật nhận thông báo\n' +
-      '/unsubscribe — Tắt tất cả thông báo\n\n' +
-      '⚙️ CẤU HÌNH\n' +
-      '/setimpact High Medium — Chọn mức độ tác động\n' +
-      '/setcurrency USD EUR GBP — Lọc theo đồng tiền\n' +
-      '/settime 08:00 — Giờ nhận bản tin sáng\n' +
-      '/setalert 15 — Cảnh báo trước N phút\n\n' +
-      '🔧 QUẢN LÝ\n' +
-      '/settings — Xem cài đặt hiện tại',
-  );
+    '━━━━━━━━━━━━━━━━━━━━━━\n\n' +
+    '👤 BẮT ĐẦU\n' +
+    '/start — Đăng ký tài khoản\n' +
+    '/subscribe — Bật nhận thông báo tin tức\n' +
+    '/unsubscribe — Tắt tất cả thông báo\n\n' +
+    '⚙️ CẤU HÌNH BỘ LỌC\n' +
+    '/setimpact [mức độ] — Chọn mức độ tác động muốn nhận\n' +
+    '   Ví dụ: /setimpact High Medium\n' +
+    '   Lựa chọn: High | Medium | Low | Holiday\n\n' +
+    '/setcurrency [đồng tiền] — Lọc theo đồng tiền\n' +
+    '   Ví dụ: /setcurrency USD EUR GBP\n' +
+    '   Bỏ trống = nhận tất cả: /setcurrency all\n' +
+    '   Hỗ trợ: USD EUR GBP JPY AUD NZD CAD CHF CNY\n\n' +
+    '🔔 CẤU HÌNH THÔNG BÁO\n' +
+    '/settime HH:MM — Đặt giờ nhận bản tin sáng\n' +
+    '   Ví dụ: /settime 07:30\n\n' +
+    '/setalert N — Đặt cảnh báo trước sự kiện N phút\n' +
+    '   Ví dụ: /setalert 10  (từ 1 đến 120 phút)\n\n' +
+    '📅 XEM LỊCH\n' +
+    '/today — Xem tất cả sự kiện hôm nay (theo bộ lọc của bạn)\n' +
+    '/next — Xem sự kiện trong 2 giờ tới\n\n' +
+    '🔧 QUẢN LÝ\n' +
+    '/settings — Xem toàn bộ cài đặt hiện tại\n' +
+    '/help — Hiển thị hướng dẫn này\n\n' +
+    '━━━━━━━━━━━━━━━━━━━━━━\n' +
+    '💡 Mẹo: Sau /subscribe, dùng /setimpact High để chỉ nhận tin quan trọng nhất.';
+
+  await ctx.reply(helpText);
+});
+
+bot.command('today', async (ctx) => {
+  const from = ctx.from;
+  if (!from) return;
+  console.log(`[/today] User ${from.id} requested today's events`);
+
+  try {
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('telegram_id', from.id)
+      .single();
+
+    if (userError || !user) {
+      console.error('[/today] User not found:', userError);
+      return ctx.reply('Vui lòng dùng /start trước.');
+    }
+
+    const { data: settings } = await supabase
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const today = new Date().toISOString().slice(0, 10);
+    console.log(`[/today] Querying events for date: ${today}`);
+
+    const { data: events, error: eventsError } = await supabase
+      .from('events')
+      .select('*')
+      .eq('event_date', today)
+      .order('event_time', { ascending: true });
+
+    if (eventsError) {
+      console.error('[/today] Supabase error:', eventsError);
+      return ctx.reply('❌ Lỗi truy vấn dữ liệu. Vui lòng thử lại sau.');
+    }
+
+    console.log(`[/today] Found ${events?.length ?? 0} events for ${today}`);
+
+    if (!events || events.length === 0) {
+      return ctx.reply(
+        `📅 Lịch kinh tế ${today}\n\n` +
+          `Không có sự kiện nào hôm nay. Có thể dữ liệu chưa được cập nhật.`,
+      );
+    }
+
+    let filtered = events;
+    if (settings?.impact_filter?.length) {
+      filtered = filtered.filter((e: any) => settings.impact_filter.includes(e.impact));
+    }
+    if (settings?.currency_filter?.length) {
+      filtered = filtered.filter((e: any) => settings.currency_filter.includes(e.currency));
+    }
+
+    console.log(`[/today] After filtering: ${filtered.length} events`);
+
+    if (filtered.length === 0) {
+      return ctx.reply(
+        `📅 Lịch kinh tế ${today}\n\n` +
+          `Không có sự kiện nào khớp với bộ lọc của bạn.\n` +
+          `Dùng /setimpact để thay đổi bộ lọc.`,
+      );
+    }
+
+    const impactEmoji: Record<string, string> = {
+      High: '🔴',
+      Medium: '🟡',
+      Low: '🟢',
+      Holiday: '🏖️',
+    };
+    const lines = filtered.slice(0, 15).map((e: any) => {
+      const utcTime = e.event_time ? e.event_time.slice(0, 5) : '??:??';
+      const [h, m] = utcTime.split(':').map(Number);
+      const localH = (h + 7) % 24;
+      const localTime = `${String(localH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      const emoji = impactEmoji[e.impact] ?? '⚪';
+      let line = `${emoji} ${localTime} ${e.currency} — ${e.title}`;
+      if (e.forecast) line += `\n    📊 Dự báo: ${e.forecast}`;
+      if (e.previous) line += ` | Trước: ${e.previous}`;
+      return line;
+    });
+
+    await ctx.reply(
+      `📅 Lịch kinh tế hôm nay (${today})\n\n${lines.join('\n')}\n\n_📊 Dữ liệu từ Forex Factory_`,
+      { parse_mode: 'Markdown' },
+    );
+    console.log(`[/today] Response sent successfully`);
+  } catch (err: any) {
+    console.error('[/today] Unexpected error:', err.message, err.stack);
+    await ctx.reply('❌ Đã xảy ra lỗi. Vui lòng thử lại sau.');
+  }
 });
 
 bot.command('subscribe', async (ctx) => {
