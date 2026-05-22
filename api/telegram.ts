@@ -11,18 +11,36 @@ const bot = new Telegraf(token);
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function readJsonBody(req: any): Promise<any> {
-  if (req?.body && typeof req.body === 'object') return req.body;
+  // If Vercel already parsed it
+  if (req?.body && typeof req.body === 'object') {
+    console.log('[Webhook] Body already parsed by Vercel');
+    return req.body;
+  }
 
-  const chunks: Buffer[] = [];
-  await new Promise<void>((resolve, reject) => {
-    req.on('data', (c: Buffer) => chunks.push(c));
-    req.on('end', () => resolve());
-    req.on('error', reject);
-  });
+  // If it's a string, try to parse it
+  if (typeof req.body === 'string') {
+    try {
+      console.log('[Webhook] Parsing body from string');
+      return JSON.parse(req.body);
+    } catch (e) {
+      console.error('[Webhook] Failed to parse req.body string:', e);
+    }
+  }
 
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
-  if (!raw) return undefined;
-  return JSON.parse(raw);
+  // Fallback: read from stream
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    }
+    const raw = Buffer.concat(chunks).toString('utf8').trim();
+    console.log('[Webhook] Raw body from stream length:', raw.length);
+    if (!raw) return undefined;
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error('[Webhook] Error reading stream:', err);
+    return undefined;
+  }
 }
 
 async function ensureUser(telegramId: number, username?: string, firstName?: string) {
@@ -254,6 +272,8 @@ bot.command('setalert', async (ctx) => {
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 export default async (req: any, res: any) => {
+  console.log(`[Webhook] Received ${req.method} request`);
+
   if (req.method !== 'POST') {
     return res
       .status(200)
@@ -264,18 +284,28 @@ export default async (req: any, res: any) => {
     const tokenHeader =
       req.headers['x-telegram-bot-api-secret-token'] ??
       req.headers['X-Telegram-Bot-Api-Secret-Token'];
+    
     if (tokenHeader !== webhookSecret) {
       console.warn('[Webhook] Unauthorized - token mismatch');
-      return res.status(401).json({ error: 'Unauthorized' });
+      // Trả về 200 thay vì 401 để Telegram không retry liên tục nếu cấu hình sai
+      return res.status(200).json({ ok: false, error: 'Unauthorized' });
     }
   }
 
   try {
     const body = await readJsonBody(req);
-    if (!body) return res.status(200).json({ ok: true });
+    console.log('[Webhook] Update received:', body?.update_id);
+    
+    if (!body || !body.update_id) {
+      console.warn('[Webhook] No body or update_id found');
+      return res.status(200).json({ ok: true, message: 'No body' });
+    }
+
     await bot.handleUpdate(body);
+    console.log('[Webhook] Update handled successfully');
   } catch (err: any) {
-    console.error('[Webhook] Error:', err?.message ?? err);
+    console.error('[Webhook] Error handling update:', err?.message ?? err);
+    // Luôn trả về 200 OK cho Telegram để tránh bị disable webhook
   }
 
   return res.status(200).json({ ok: true });
