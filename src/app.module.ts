@@ -19,18 +19,6 @@ import { CronModule } from './cron/cron.module';
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-        formatters: {
-          level: (label: string) => ({ level: label }),
-        },
-        serializers: {
-          req: (req: any) => ({
-            method: req.method,
-            url: req.url,
-          }),
-          res: (res: any) => ({
-            statusCode: res.statusCode,
-          }),
-        },
       },
     }),
     SupabaseModule,

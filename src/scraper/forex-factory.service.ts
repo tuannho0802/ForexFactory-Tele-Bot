@@ -138,12 +138,12 @@ export class ForexFactoryService {
    * Reset cache định kỳ để đảm bảo dữ liệu luôn mới
    */
   async handleCacheRefresh() {
-    this.logger.debug('🔄 Cache refresh triggered manually');
+    this.logger.debug('🔄 Cache refresh triggered');
     this.eventCache.clear();
     try {
       await this.fetchEvents('this');
     } catch (e) {
-      this.logger.error('Cache refresh failed', e);
+      this.logger.error('Background cache refresh failed', e);
     }
   }
 
