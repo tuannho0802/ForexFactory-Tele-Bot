@@ -4,9 +4,17 @@
     "api/index.ts": {
       "memory": 256,
       "maxDuration": 30
+    },
+    "api/telegram.ts": {
+      "memory": 256,
+      "maxDuration": 10
     }
   },
   "rewrites": [
+    {
+      "source": "/webhook/telegram",
+      "destination": "/api/telegram"
+    },
     {
       "source": "/(.*)",
       "destination": "/api/index"

@@ -3,20 +3,20 @@ import { AppModule } from '../src/app.module';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import express from 'express';
-import serverlessHttp from 'serverless-http';
+import serverless from 'serverless-http';
 
 let cachedHandler: any;
 
 async function bootstrap() {
   if (cachedHandler) return cachedHandler;
 
-  console.log('[Bootstrap] Starting...');
+  console.log('[Bootstrap] Starting NestJS...');
 
   const expressApp = express();
 
   const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
     bufferLogs: true,
-    // KHÔNG truyền logger array ở đây — gây lỗi setLogLevels
+    logger: ['error', 'warn', 'log'],
   });
 
   app.useGlobalPipes(
@@ -29,8 +29,7 @@ async function bootstrap() {
 
   await app.init();
 
-  // serverless-http wrap PHẢI dùng express v4, không dùng express v5
-  cachedHandler = serverlessHttp(expressApp);
+  cachedHandler = serverless(expressApp);
 
   console.log('[Bootstrap] Done.');
   return cachedHandler;
@@ -41,7 +40,7 @@ export default async (req: any, res: any) => {
     const handler = await bootstrap();
     return handler(req, res);
   } catch (err: any) {
-    console.error('[Fatal]', err.message, err.stack);
+    console.error('[Fatal]', err.message);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Internal Server Error', message: err.message });
     }
